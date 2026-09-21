@@ -1,0 +1,165 @@
+using TypeScript.Compiler.Text;
+using TypeScript.Compiler.Ast;
+using TypeScript.Compiler.Diagnostics;
+using TypeScript.Compiler.Syntax;
+
+namespace TypeScript.Compiler.Checking;
+
+internal interface IIterationElementHost
+{
+    bool NoUncheckedIndexedAccess { get; }
+
+    ValueTask<Type> IterationGlobalAsync(Utf8String name, int arity, bool report, CancellationToken cancellation);
+
+    ValueTask<bool> ArrayLikeAsync(Type type, CancellationToken cancellation);
+
+    ValueTask<Type?> NumberIndexAsync(Type type, CancellationToken cancellation);
+
+    ValueTask IterationErrorAsync(
+        SyntaxNode node,
+        DiagnosticCode code,
+        bool missingAwait,
+        Type type,
+        Type? other,
+        CancellationToken cancellation,
+        IReadOnlyList<IterationDiagnostic>? related = null);
+}
+
+internal sealed class IterationElements(TypeContext context, TypeAlgebra algebra, IteratorProtocols protocols,
+    TypeRelations relations, AwaitedTypes awaited, IIterationElementHost host)
+{
+    internal async ValueTask<Type> CheckAsync(
+        IterationUse use,
+        Type type,
+        Type sent,
+        SyntaxNode? node = null,
+        CancellationToken cancellation = default)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        context.RequireOwned(type);
+        context.RequireOwned(sent);
+        return (type.Flags & TypeFlags.Any) != 0 ? type
+            : await TryAsync(use, type, sent, node, true, cancellation).ConfigureAwait(false) ?? context.AnyType;
+    }
+
+    internal async ValueTask<Type?> TryAsync(
+        IterationUse use,
+        Type input,
+        Type sent,
+        SyntaxNode? node = null,
+        bool checkAssignability = false,
+        CancellationToken cancellation = default)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        context.RequireOwned(input);
+        context.RequireOwned(sent);
+        bool async = (use & IterationUse.AllowsAsyncIterablesFlag) != 0;
+        if (input == context.NeverType)
+        {
+            if (node is not null)
+                await NotIterableAsync(node, input, async, cancellation).ConfigureAwait(false);
+            return null;
+        }
+        bool iterable = await host.IterationGlobalAsync(
+            Utf8Literals.Iterable,
+            3,
+            false,
+            cancellation).ConfigureAwait(false) != context.EmptyGenericType;
+        bool outOfBounds = host.NoUncheckedIndexedAccess && (use & IterationUse.PossiblyOutOfBounds) != 0;
+        if (iterable || async)
+        {
+            var types = await protocols.IterableAsync(input, use, iterable ? node : null, cancellation).ConfigureAwait(false);
+            if (checkAssignability && types.Next is { } next)
+            {
+                DiagnosticCode code = (use & IterationUse.ForOfFlag) != 0 ? DiagnosticCode.CannotIterateValueBecauseTheNextMethodOfItsIteratorExpectsType1ButForOfWillAlwaysSend0 : (use & IterationUse.SpreadFlag) != 0 ? DiagnosticCode.CannotIterateValueBecauseTheNextMethodOfItsIteratorExpectsType1ButArraySpreadWillAlwaysSend0
+                    : (use & IterationUse.DestructuringFlag) != 0
+                        ? DiagnosticCode.CannotIterateValueBecauseTheNextMethodOfItsIteratorExpectsType1ButArrayDestructuringWillAlwaysSend0
+                        : (use & IterationUse.YieldStarFlag) != 0
+                            ? DiagnosticCode.CannotDelegateIterationToValueBecauseTheNextMethodOfItsIteratorExpectsType1ButTheContainingGeneratorWillAlwaysSend0
+                            : DiagnosticCode.None;
+                if (code != DiagnosticCode.None
+                    && !await relations.RelatedAsync(sent, next, RelationKind.Assignable, cancellation).ConfigureAwait(false)
+                    && node is not null)
+                    await host.IterationErrorAsync(node, code, false, sent, next, cancellation).ConfigureAwait(false);
+            }
+            if (types.Yield is not null || iterable)
+                return types.Yield is not null && outOfBounds
+                    ? await IncludeMissingAsync(types.Yield, cancellation).ConfigureAwait(false)
+                    : types.Yield;
+        }
+        var array = input;
+        bool hasString = false;
+        if ((use & IterationUse.AllowsStringInputFlag) != 0)
+        {
+            if (array is UnionType union)
+            {
+                var filtered = union.Types.Where(t => (t.Flags & TypeFlags.StringLike) == 0).ToArray();
+                if (filtered.Length != union.Types.Count)
+                    array = await algebra.UnionAsync(filtered, UnionReduction.Subtype, cancellation: cancellation).ConfigureAwait(false);
+            }
+            else if ((array.Flags & TypeFlags.StringLike) != 0)
+                array = context.NeverType;
+            hasString = array != input;
+            if (hasString && (array.Flags & TypeFlags.Never) != 0)
+                return outOfBounds ? await IncludeMissingAsync(context.StringType, cancellation).ConfigureAwait(false) : context.StringType;
+        }
+        if (!await host.ArrayLikeAsync(array, cancellation).ConfigureAwait(false))
+        {
+            if (node is not null)
+            {
+                var types = await protocols.IterableAsync(input, use, cancellation: cancellation).ConfigureAwait(false);
+                bool named = input.Symbol is { } namedSymbol && (namedSymbol.Name.Span.SequenceEqual("Float32Array"u8) || namedSymbol.Name.Span.SequenceEqual("Float64Array"u8) || namedSymbol.Name.Span.SequenceEqual("Int16Array"u8) || namedSymbol.Name.Span.SequenceEqual("Int32Array"u8) || namedSymbol.Name.Span.SequenceEqual("Int8Array"u8) || namedSymbol.Name.Span.SequenceEqual("NodeList"u8) || namedSymbol.Name.Span.SequenceEqual("Uint16Array"u8) || namedSymbol.Name.Span.SequenceEqual("Uint32Array"u8) || namedSymbol.Name.Span.SequenceEqual("Uint8Array"u8) || namedSymbol.Name.Span.SequenceEqual("Uint8ClampedArray"u8));
+                DiagnosticCode code = types.Yield is not null || named
+                    ? DiagnosticCode.Type0CanOnlyBeIteratedThroughWhenUsingTheDownlevelIterationFlagOrWithATargetOfEs2015OrHigher
+                    : (use & IterationUse.AllowsStringInputFlag) != 0 && !hasString
+                        ? DiagnosticCode.Type0IsNotAnArrayTypeOrAStringType
+                        : DiagnosticCode.Type0IsNotAnArrayType;
+                bool hint = types.Yield is null
+                    && await awaited.OfPromiseAsync(array, cancellation: cancellation).ConfigureAwait(false) is not null;
+                await host.IterationErrorAsync(node, code, hint, array, null, cancellation).ConfigureAwait(false);
+            }
+            return hasString
+                ? outOfBounds ? await IncludeMissingAsync(context.StringType, cancellation).ConfigureAwait(false) : context.StringType
+                : null;
+        }
+        var element = await host.NumberIndexAsync(array, cancellation).ConfigureAwait(false);
+        if (hasString && element is not null)
+        {
+            if ((element.Flags & TypeFlags.StringLike) != 0 && !host.NoUncheckedIndexedAccess)
+                return context.StringType;
+            return await algebra.UnionAsync(
+                outOfBounds ? [element, context.StringType, context.UndefinedType] : [element, context.StringType],
+                UnionReduction.Subtype, cancellation: cancellation).ConfigureAwait(false);
+        }
+        return element is not null && (use & IterationUse.PossiblyOutOfBounds) != 0
+            ? await IncludeMissingAsync(element, cancellation).ConfigureAwait(false) : element;
+    }
+
+    internal ValueTask<Type> IncludeMissingAsync(Type type, CancellationToken cancellation = default) => host.NoUncheckedIndexedAccess
+        ? algebra.UnionAsync([type, context.MissingType], cancellation: cancellation) : ValueTask.FromResult(type);
+
+    internal async ValueTask NotIterableAsync(SyntaxNode node, Type type, bool async, CancellationToken cancellation = default,
+        IReadOnlyList<IterationDiagnostic>? related = null)
+    {
+        bool hint = await awaited.OfPromiseAsync(type, cancellation: cancellation).ConfigureAwait(false) is not null;
+        if (!hint && !async && node.Parent is ForInOrOfStatementNode { Kind: SyntaxKind.ForOfStatement } loop && loop.Expression == node)
+        {
+            var target = await host.IterationGlobalAsync(Utf8Literals.AsyncIterable, 3, false, cancellation).ConfigureAwait(false);
+            if (target != context.EmptyGenericType)
+                hint = await relations.RelatedAsync(
+                    type,
+                    context.CreateTypeReference((InterfaceType)target, [context.AnyType, context.AnyType, context.AnyType]),
+                    RelationKind.Assignable, cancellation).ConfigureAwait(false);
+        }
+        await host.IterationErrorAsync(
+            node,
+            async
+                ? DiagnosticCode.Type0MustHaveASymbolAsyncIteratorMethodThatReturnsAnAsyncIterator
+                : DiagnosticCode.Type0MustHaveASymbolIteratorMethodThatReturnsAnIterator,
+            hint,
+            type,
+            null,
+            cancellation,
+            related).ConfigureAwait(false);
+    }
+}

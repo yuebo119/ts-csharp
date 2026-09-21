@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [main, main-ts7, ts7-release, typescript-cs, 'release-*']
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  product:
+    uses: ./.github/workflows/csharp.yml
+  required:
+    runs-on: ubuntu-slim
+    if: ${{ always() }}
+    needs: [product]
+    steps:
+      - run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.product.result }}

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TypeScriptExecutableName Condition="'$(TypeScriptExecutableName)' == ''">tsgo-cs</TypeScriptExecutableName>
+    <AssemblyName>$(TypeScriptExecutableName)</AssemblyName>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TypeScript.Compiler/TypeScript.Compiler.csproj" />
+  </ItemGroup>
+</Project>

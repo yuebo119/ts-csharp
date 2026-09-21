@@ -1,0 +1,38 @@
+{
+    "timestamp": "2026-09-22T04:30:24.840Z",
+    "sdk": "11.0.100-rc.2.26470.103",
+    "configuration": "Release",
+    "runtimeIdentifier": "win-x64",
+    "optimizationPreference": "Speed",
+    "instructionSet": "native",
+    "runtimeAsync": true,
+    "embedded": {
+        "candidatePath": "built/csharp/phase2-native/TypeScript.Compatibility.exe",
+        "candidateSha256": "6d0aef7babdfd83cf37672e5865645f317de8063c5daec43e314103311e6f594",
+        "assertions": 4704,
+        "hostAssertions": 67,
+        "moduleAssertions": 42,
+        "javascriptSyntaxCases": 28,
+        "javascriptDiagnostics": 58,
+        "parserSafetyCases": 36,
+        "parserSafetyNodes": 1421783
+    },
+    "nonembedded": {
+        "candidatePath": "built/csharp/hosts-side-by-side/TypeScript.Compatibility.exe",
+        "candidateSha256": "5b0ff66ff50f55a618fb6778e61ab138dea755370809f7c422ae16b5f7a94131",
+        "assertions": 4703,
+        "hostAssertions": 62,
+        "moduleAssertions": 42
+    },
+    "diagnostics": 2213,
+    "locales": 13,
+    "libraries": 108,
+    "priorPrimitiveAssertions": 458098,
+    "priorPipeline": {
+        "cases": 15,
+        "nodes": 3886,
+        "relations": 90212,
+        "deepAndCancellation": true
+    },
+    "scope": "Combined final NativeAOT foundation and phase-1 regression checks. Full syntax, documentation, metadata, regex, host and constrained-worker evidence is recorded separately."
+}

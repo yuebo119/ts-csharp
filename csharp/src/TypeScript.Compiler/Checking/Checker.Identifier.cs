@@ -1,0 +1,326 @@
+using TypeScript.Compiler.Text;
+using TypeScript.Compiler.Ast;
+using TypeScript.Compiler.Binding;
+using TypeScript.Compiler.Diagnostics;
+using TypeScript.Compiler.Syntax;
+
+namespace TypeScript.Compiler.Checking;
+
+internal sealed partial class Checker : IIdentifierTypeHost, IReferenceTypeNarrowingHost, ISymbolNarrowingHost, IAssignmentCheckHost, IRelationDiagnosticHost
+{
+    internal IdentifierTypes Identifiers { get; }
+    internal AssignmentChecks AssignmentChecks { get; }
+    internal RelationDiagnostics RelationDiagnostics { get; }
+    internal HashSet<(SyntaxNode Node, bool Construct)> AssignmentHints { get; } = [];
+    public bool NoCheck => program.Symbols.Program.Configuration.Options.NoCheck == true;
+    internal ReferenceTypeNarrowing ReferenceNarrowing { get; }
+    internal SymbolNarrowing SymbolNarrowing { get; }
+    internal AliasReferences AliasReferences { get; }
+    internal MissingNamePrefixes MissingNames { get; }
+    internal HashSet<SyntaxNode> ContextualBindingPatterns { get; } = [];
+
+    public bool ContextualBindingPattern(SyntaxNode pattern) =>
+        ContextualBindingPatterns.Contains(pattern) || BindingPatterns.Contains(pattern);
+
+    public ValueTask<Type> ThisExpressionAsync(SyntaxNode node, CancellationToken cancellation) =>
+        ThisExpressions.ThisAsync(node, cancellation);
+
+    public ValueTask MarkIdentifierAsync(IdentifierNode node, CancellationToken cancellation) =>
+        AliasReferences.IdentifierAsync(node, cancellation);
+
+    public async ValueTask CheckDeprecatedAsync(IdentifierNode node, Symbol symbol, CancellationToken cancellation)
+    {
+        if (program.Deprecations.Symbol(symbol) && await program.Deprecations.UncalledAsync(node, symbol, FlowReferences, cancellation))
+            program.DeprecatedSuggestion(node, symbol.Declarations, node.Text);
+    }
+
+    public ValueTask<Type> NarrowedSymbolAsync(Symbol symbol, SyntaxNode location, CancellationToken cancellation) =>
+        SymbolNarrowing.GetAsync(symbol, location, cancellation);
+
+    public ValueTask<Type> NarrowableReferenceAsync(Type type, SyntaxNode node, CheckMode mode, CancellationToken cancellation) =>
+        ReferenceNarrowing.GetAsync(type, node, mode, cancellation);
+
+    public void IdentifierError(SyntaxNode node, DiagnosticCode code, Symbol symbol, Type? type = null)
+        => Error(
+            node,
+            code,
+            code is DiagnosticCode.Variable0IsUsedBeforeBeingAssigned or DiagnosticCode.CannotAssignTo0BecauseItIsAnEnum
+                or DiagnosticCode.CannotAssignTo0BecauseItIsAClass or DiagnosticCode.CannotAssignTo0BecauseItIsAFunction
+                or DiagnosticCode.CannotAssignTo0BecauseItIsANamespace or DiagnosticCode.CannotAssignTo0BecauseItIsAnImport
+                or DiagnosticCode.CannotAssignTo0BecauseItIsAConstant or DiagnosticCode.CannotAssignTo0BecauseItIsAReadOnlyProperty
+                or DiagnosticCode.CannotAssignTo0BecauseItIsNotAVariable ? [TypeDisplay.SymbolName(symbol)]
+            : code is DiagnosticCode.Variable0ImplicitlyHasType1InSomeLocationsWhereItsTypeCannotBeDetermined
+                or DiagnosticCode.Variable0ImplicitlyHasAn1Type
+                ? [TypeDisplay.SymbolName(symbol), type == context.AutoType ? Utf8Literals.Any : Utf8Literals.AnyArray]
+                : []);
+
+    public void CircularInitializer(Symbol symbol) => CircularSymbol(symbol);
+
+    private void MissingNamePrefixError(SyntaxNode node, DiagnosticCode code, Symbol? symbol)
+        =>
+            Error(
+                node,
+                code,
+                code == DiagnosticCode.CannotFindName0DidYouMeanTheStaticMember10
+                    ? [SyntaxNameText.Get(node), TypeDisplay.SymbolName(symbol!)]
+                    : [SyntaxNameText.Get(node)]);
+
+    public ValueTask<Type?> ContextualReferenceAsync(SyntaxNode node, bool skipBindingPatterns, CancellationToken cancellation) =>
+        Contexts.GetAsync(node, skipBindingPatterns ? ContextFlags.SkipBindingPatterns : 0, cancellation);
+
+    public async ValueTask<Type?> OtherContextAsync(SyntaxNode node, ContextFlags flags, CancellationToken cancellation)
+    {
+        if (node is JsxAttributesNode || node.Parent is JsxExpressionNode or JsxAttributeNode or JsxSpreadAttributeNode or JsxElementNode
+            or JsxOpeningElementNode or JsxSelfClosingElementNode)
+            return await JsxContextAsync(node, flags, cancellation);
+        while (node.Parent is ParenthesizedExpressionNode or NonNullExpressionNode)
+            node = node.Parent;
+        if (node.Parent is ImportAttributeNode attribute)
+        {
+            var attributes = globalImportAttributes ?? await program.Globals.GetAsync(Utf8Literals.ImportAttributes, 0, false, cancellation);
+            return await ContextualPropertyAsync(attributes, ImportAttributeName(attribute.Name!), cancellation);
+        }
+        if (node.Parent is DecoratorNode decorator)
+            return await DecoratorSignatureAsync(decorator, cancellation) is { } decoratorSignature
+                ? DecoratorFunction(decoratorSignature)
+                : null;
+        if (node.Parent is IInitializedNode initialized && initialized.Initializer == node
+            && node.Parent is VariableDeclarationNode or ParameterDeclarationNode or PropertyDeclarationNode)
+        {
+            if (node.Parent is ITypedNode { Type: { } annotation })
+                return await Nodes.FromNodeAsync(annotation, cancellation);
+            if (node.Parent is VariableDeclarationNode)
+                return null;
+            throw new InvalidOperationException("Checker requires contextual declaration initializers");
+        }
+        if (node.Parent is CallExpressionNode call && call.Expression != node)
+        {
+            return await ContextualCallArgumentAsync(call, node, cancellation);
+        }
+        if (node.Parent is CallExpressionNode)
+            return null;
+        if (node.Parent is NewExpressionNode construct)
+            return await ContextualCallArgumentAsync(construct, node, cancellation);
+        if (node.Parent is TemplateSpanNode span)
+            return span.Parent?.Parent is TaggedTemplateExpressionNode tag
+                ? await ContextualCallArgumentAsync(tag, node, cancellation) : null;
+        if (node.Parent is AwaitExpressionNode awaitExpression)
+        {
+            var contextual = await Contexts.GetAsync(awaitExpression, flags, cancellation);
+            if (contextual is null)
+                return null;
+            var awaited = await Awaited.GetAsync(contextual, false, cancellation: cancellation);
+            if (awaited is null)
+                return null;
+            var promise = await program.Globals.GetAsync(Utf8Literals.PromiseLike, 1, false, cancellation);
+            return await Algebra.UnionAsync([awaited, promise == context.EmptyGenericType ? context.UnknownType
+                : context.CreateTypeReference((InterfaceType)promise, [awaited])], cancellation: cancellation);
+        }
+        if (node.Parent is YieldExpressionNode yield)
+            return await Generators.OperandContextAsync(yield, flags, cancellation);
+        if (node.Parent is ReturnStatementNode or ArrowFunctionNode)
+        {
+            var function = DeclarationOrder.Ancestor(node.Parent, n => n is IFunctionSignature);
+            if (function is null)
+                return null;
+            var contextual = await FunctionContexts.ReturnAsync(function, flags, cancellation);
+            if (contextual is null)
+                return null;
+            if (SemanticSyntax.Generator(function))
+            {
+                contextual = await Generators.ReturnExpressionAsync(
+                    contextual,
+                    SemanticSyntax.HasModifier(function, SyntaxKind.AsyncKeyword),
+                    cancellation);
+                if (contextual is null)
+                    return null;
+            }
+            if (SemanticSyntax.HasModifier(function, SyntaxKind.AsyncKeyword))
+            {
+                var awaited = await Awaited.GetAsync(contextual, false, cancellation: cancellation);
+                if (awaited is null)
+                    return null;
+                var promise = await program.Globals.GetAsync(Utf8Literals.PromiseLike, 1, false, cancellation);
+                return await Algebra.UnionAsync([awaited, promise == context.EmptyGenericType ? context.UnknownType
+                    : context.CreateTypeReference((InterfaceType)promise, [awaited])], cancellation: cancellation);
+            }
+            return contextual;
+        }
+        if (node.Parent is BinaryExpressionNode binary)
+        {
+            if (BinaryExpressions.Assignment(binary.OperatorToken!.Kind) && binary.Right == node)
+                return await AssignmentContextAsync(binary, cancellation).ConfigureAwait(false);
+            if (binary.OperatorToken.Kind is SyntaxKind.BarBarToken or SyntaxKind.AmpersandAmpersandToken
+                or SyntaxKind.QuestionQuestionToken)
+                throw new InvalidOperationException("Checker requires logical expression contextual types");
+            return null;
+        }
+        if (node.Parent is AsExpressionNode assertion)
+            return await Nodes.FromNodeAsync(assertion.Type!, cancellation);
+        if (node.Parent is TypeAssertionNode typeAssertion)
+            return await Nodes.FromNodeAsync(typeAssertion.Type!, cancellation);
+        if (node.Parent is PropertyAccessExpressionNode or ElementAccessExpressionNode or QualifiedNameNode)
+            return null;
+        if (node.Parent is TypeOfExpressionNode or VoidExpressionNode or PrefixUnaryExpressionNode or PostfixUnaryExpressionNode
+            or NonNullExpressionNode or IfStatementNode or WhileStatementNode or DoStatementNode or SwitchStatementNode
+            or ExpressionStatementNode or ExportSpecifierNode or TypeQueryNode)
+            return null;
+        throw new InvalidOperationException($"Checker requires contextual reference typing in {node.Parent?.Kind}");
+    }
+
+    public ValueTask<Type?> BindingParentAsync(SyntaxNode declaration, CancellationToken cancellation) =>
+        Bindings.ParentAsync(declaration, cancellation: cancellation);
+
+    public ValueTask<Type> BindingFromParentAsync(
+        BindingElementNode element,
+        Type parent,
+        bool noTupleBoundsCheck,
+        CancellationToken cancellation) => Bindings.FromParentAsync(element, parent, noTupleBoundsCheck, cancellation);
+
+    public ValueTask<bool> SomeAssignedAsync(SyntaxNode declaration, CancellationToken cancellation) =>
+        Assignments.SomeAsync(declaration, cancellation);
+
+    public bool ContextSensitiveFunction(SyntaxNode node) => node is FunctionExpressionNode or ArrowFunctionNode
+        or MethodDeclarationNode { Parent: ObjectLiteralExpressionNode }
+            ? program.IsContextSensitive(node) : false;
+
+    public ValueTask<Signature?> ContextualSignatureAsync(SyntaxNode node, CancellationToken cancellation) =>
+        program.ContextualSignatures.TryGetValue(node, out var signature) ? ValueTask.FromResult<Signature?>(signature)
+            : FunctionContexts.GetAsync(node, cancellation);
+
+    public TypeMapper? NonFixingMapper(SyntaxNode node) =>
+        Contexts.InferenceFor(node)?.NonFixingMapper;
+
+    public bool ExportsPropertyAssignment(SyntaxNode left)
+    {
+        if ((left.Flags & NodeFlags.JavaScriptFile) == 0
+            || left.Parent is not BinaryExpressionNode { OperatorToken.Kind: SyntaxKind.EqualsToken })
+            return false;
+        var receiver = left switch
+        {
+            PropertyAccessExpressionNode property => property.Expression,
+            ElementAccessExpressionNode element when element.ArgumentExpression is StringLiteralNode or NumericLiteralNode
+                or NoSubstitutionTemplateLiteralNode => element.Expression,
+            _ => null
+        };
+        return receiver is IdentifierNode { Text.Span: var matchedText } && matchedText.SequenceEqual("exports"u8) || receiver is PropertyAccessExpressionNode { Expression: IdentifierNode { Text.Span: var matchedText2 }, Name: IdentifierNode { Text.Span: var matchedText3 } } && matchedText2.SequenceEqual("module"u8) && matchedText3.SequenceEqual("exports"u8) || receiver is ElementAccessExpressionNode { Expression: IdentifierNode { Text.Span: var matchedText4 }, ArgumentExpression: StringLiteralNode { Text.Span: var matchedText5 } } && matchedText4.SequenceEqual("module"u8) && matchedText5.SequenceEqual("exports"u8);
+    }
+
+    public ValueTask<Type> PropertyWriteAsync(PropertyAccessExpressionNode left, CancellationToken cancellation)
+            => Access.PropertyAsync(left, writeOnly: true, cancellation: cancellation);
+
+    public async ValueTask<Type?> AssignedPropertyTypeAsync(PropertyAccessExpressionNode left, CancellationToken cancellation)
+        =>
+            await FlowPropertyTypeAsync(
+                await ExpressionAsync(left.Expression!, cancellation),
+                SyntaxNameText.Get(left.Name),
+                false,
+                cancellation);
+
+    public async ValueTask CheckAssignableAsync(
+        Type source,
+        Type target,
+        SyntaxNode errorNode,
+        SyntaxNode expression,
+        bool exactOptionalMismatch,
+        CancellationToken cancellation)
+    {
+        await RelationDiagnostics.CheckAsync(
+            source,
+            target,
+            RelationKind.Assignable,
+            errorNode,
+            expression,
+            exactOptionalMismatch
+                ? DiagnosticCode.Type0IsNotAssignableToType1WithExactOptionalPropertyTypesColonTrueConsiderAddingUndefinedToTheTypeOfTheTarget
+                : null,
+            cancellation);
+    }
+
+    public void AssignmentError(SyntaxNode node, DiagnosticCode code) => Error(node, code);
+
+    public async ValueTask<bool> ReportRelationAsync(
+        Type source,
+        Type target,
+        RelationKind kind,
+        SyntaxNode? node,
+        DiagnosticCode? headCode,
+        CancellationToken cancellation)
+    {
+        bool related = await Relations.RelatedAsync(source, target, kind, cancellation);
+        if (!related && node is not null)
+        {
+            if (await Relations.HasOverflowAsync(source, target, kind, cancellation))
+            {
+                RelationError(
+                    node,
+                    DiagnosticCode.ExcessiveComplexityComparingTypes0And1,
+                    await TypeDisplay.GetAsync(source, cancellation),
+                    await TypeDisplay.GetAsync(target, cancellation));
+                return false;
+            }
+            if (headCode == DiagnosticCode.X0ComponentsDonTAcceptTextAsChildElementsTextInJSXHasTheTypeStringButTheExpectedTypeOf1Is2
+                && node is JsxTextNode
+                && node.Parent is JsxElementNode element)
+            {
+                RelationError(
+                    node,
+                    DiagnosticCode.X0ComponentsDonTAcceptTextAsChildElementsTextInJSXHasTheTypeStringButTheExpectedTypeOf1Is2,
+                    CheckerDiagnostic.DeclarationName(element.OpeningElement!.TagName!),
+                    await JsxPropertyNameAsync(Utf8Literals.ElementChildrenAttribute, node, cancellation) ?? Utf8Literals.Children,
+                    await TypeDisplay.GetAsync(target, cancellation));
+                return false;
+            }
+            if (await ExcessProperties.UnknownPropertyAsync(source, target, kind, Relations, cancellation) is { } unknown)
+            {
+                var excess = unknown.Property;
+                if ((source.ObjectFlags & ObjectFlags.JsxAttributes) != 0)
+                    await ReportJsxExcessAsync(node, source, target, excess, unknown.Target, cancellation);
+                else if (relationDiagnosticHead is null)
+                {
+                    var location = (excess.ValueDeclaration as INamedNode)?.Name ?? node;
+                    var suggestion = location is IdentifierNode identifier ? await SymbolSuggestions.FindAsync(identifier.Text,
+                        await Properties.GetAsync(unknown.Target, cancellation), SymbolFlags.Value, cancellation) : null;
+                    Utf8String propertyName = TypeDisplay.SymbolName(excess), targetName = await TypeDisplay.GetAsync(
+                        unknown.Target,
+                        cancellation);
+                    RelationError(
+                        location,
+                        suggestion is null
+                            ? DiagnosticCode.ObjectLiteralMayOnlySpecifyKnownPropertiesAnd0DoesNotExistInType1
+                            : DiagnosticCode.ObjectLiteralMayOnlySpecifyKnownPropertiesBut0DoesNotExistInType1DidYouMeanToWrite2,
+                        suggestion is null ? [propertyName, targetName] : [propertyName, targetName, suggestion.Name]);
+                }
+                else
+                    RelationError(
+                        (excess.ValueDeclaration as INamedNode)?.Name ?? node,
+                        relationDiagnosticHead ?? DiagnosticCode.ObjectLiteralMayOnlySpecifyKnownPropertiesAnd0DoesNotExistInType1);
+                return false;
+            }
+            DiagnosticCode? missingCode = headCode is not (DiagnosticCode.Class0IncorrectlyImplementsInterface1
+                or DiagnosticCode.Class0IncorrectlyImplementsClass1DidYouMeanToExtend1AndInheritItsMembersAsASubclass
+                or DiagnosticCode.ConversionOfType0ToType1MayBeAMistakeBecauseNeitherTypeSufficientlyOverlapsWithTheOtherIfThisWasIntentionalConvertTheExpressionToUnknownFirst
+                or DiagnosticCode.ItsReturnType0IsNotAValidJSXElement or DiagnosticCode.ItsInstanceType0IsNotAValidJSXElement
+                or DiagnosticCode.ItsElementType0IsNotAValidJSXElement)
+                ? await MissingRequiredPropertyCodeAsync(source, target, kind, node, cancellation) : null;
+            DiagnosticCode code = missingCode ?? headCode ?? (context.ExactOptionalPropertyTypes
+                && (await RelationDiagnostics.ExactOptionalPropertiesAsync(source, target, cancellation)).Count != 0
+                ? DiagnosticCode.Type0IsNotAssignableToType1WithExactOptionalPropertyTypesColonTrueConsiderAddingUndefinedToTheTypesOfTheTargetSProperties
+                : DiagnosticCode.Type0IsNotAssignableToType1);
+            await ReportRelationMessageAsync(node, relationDiagnosticHead ?? code, source, target, kind, cancellation);
+        }
+        return related;
+    }
+
+    public void CallOrConstructHint(SyntaxNode node, bool construct) => AssignmentHints.Add((node, construct));
+
+    public ValueTask<bool> ElaborateComplexAsync(
+        SyntaxNode node,
+        Type source,
+        Type target,
+        RelationKind kind,
+        CancellationToken cancellation)
+            => node is JsxAttributesNode attributes ? ElaborateJsxAsync(attributes, source, target, kind, cancellation)
+                : LiteralElaboration.CheckAsync(node, source, target, kind, cancellation);
+
+}

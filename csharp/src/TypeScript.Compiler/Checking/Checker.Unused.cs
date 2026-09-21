@@ -1,0 +1,279 @@
+using TypeScript.Compiler.Text;
+using TypeScript.Compiler.Ast;
+using TypeScript.Compiler.Binding;
+using TypeScript.Compiler.Diagnostics;
+using TypeScript.Compiler.Syntax;
+
+namespace TypeScript.Compiler.Checking;
+
+internal sealed partial class Checker
+{
+    private void CheckUnusedSource(SourceFileNode file, CancellationToken cancellation)
+    {
+        if (file.IsDeclarationFile)
+            return;
+        foreach (var renamed in RenamedBindingElements)
+            if (SemanticSyntax.Source(renamed) == file && program.Symbols.ReferenceKinds(program.Symbols.Declaration(renamed)!) == 0)
+            {
+                Utf8String name = CheckerDiagnostic.DeclarationName(renamed.Name!);
+                Utf8String property = CheckerDiagnostic.DeclarationName(renamed.PropertyName!);
+                var diagnostic = CheckerDiagnostic.Create(
+                    renamed.Name!,
+                    Messages.X_0_is_an_unused_renaming_of_1_Did_you_intend_to_use_it_as_a_type_annotation,
+                    name, property);
+                var parameter = SemanticSyntax.RootDeclaration(renamed);
+                if (parameter is ITypedNode { Type: null })
+                    diagnostic = diagnostic with
+                    {
+                        RelatedInformation = [new Diagnostic(
+                            Messages.We_can_only_write_a_type_for_0_by_adding_a_type_for_the_entire_parameter_here,
+                            parameter.End, 0, [property]) { FileName = file.FileName }]
+                    };
+                Error(renamed.Name!, diagnostic);
+            }
+        foreach (var node in UnusedIdentifierScopes)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (program.Symbols.Binding(node)?.SourceFile != file)
+                continue;
+            switch (node)
+            {
+                case ClassDeclarationNode or ClassExpressionNode:
+                    CheckUnusedClass(node);
+                    CheckUnusedTypeParameters(node);
+                    break;
+                case SourceFileNode or ModuleDeclarationNode or BlockNode or CaseBlockNode or ForStatementNode or ForInOrOfStatementNode:
+                    CheckUnusedLocals(node);
+                    break;
+                case IFunctionSignature:
+                    if (SemanticSyntax.Body(node) is not null)
+                        CheckUnusedLocals(node);
+                    CheckUnusedTypeParameters(node);
+                    break;
+                case TypeAliasDeclarationNode or InterfaceDeclarationNode:
+                    CheckUnusedTypeParameters(node);
+                    break;
+                case InferTypeNode infer:
+                    if (UnreferencedTypeParameter(infer.TypeParameter!))
+                        ReportUnused(infer, infer.TypeParameter!.Name!, DiagnosticCode.X0IsDeclaredButNeverUsed, true);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unexpected unused-check scope {node.Kind}");
+            }
+        }
+    }
+
+    private void ReportUnused(
+        SyntaxNode declaration,
+        SyntaxNode location,
+        DiagnosticCode code,
+        bool parameter,
+        NodeList? typeParameters = null)
+    {
+        if (((declaration.Flags | (program.Symbols.Binding(declaration)?.Get(declaration)?.Flags ?? 0)) & (NodeFlags.Ambient | NodeFlags.ThisNodeOrAnySubNodesHasError)) != 0)
+            return;
+        var options = program.Symbols.Program.Configuration.Options;
+        Utf8String[] arguments = [];
+        if (code is DiagnosticCode.X0IsDeclaredButItsValueIsNeverRead or DiagnosticCode.Property0IsDeclaredButItsValueIsNeverRead
+            or DiagnosticCode.X0IsDeclaredButNeverUsed)
+        {
+            var name = SemanticSyntax.Name(location) ?? location;
+            arguments = [name is IdentifierNode identifier ? identifier.Text
+                : program.Symbols.Declaration(declaration) is { } symbol ? TypeDisplay.SymbolName(symbol)
+                : CheckerDiagnostic.DeclarationName(name)];
+        }
+        var diagnostic = CheckerDiagnostic.Create(location, DiagnosticLocalization.GetMessage(code), arguments);
+        if (typeParameters is not null)
+        {
+            var file = SemanticSyntax.Source(declaration)!;
+            int start = typeParameters.Pos - 1;
+            int end = Math.Min(file.Source.Bytes.Length, CheckerDiagnostic.TokenRange(file, typeParameters.End).Start + 1);
+            diagnostic = diagnostic with { Start = start, Length = end - start };
+        }
+        if ((parameter ? options.NoUnusedParameters : options.NoUnusedLocals) == true)
+            Error(location, diagnostic);
+        else
+            ExpressionSuggestion(location, diagnostic);
+    }
+
+    private void ReportUnusedVariable(SyntaxNode node, SyntaxNode location, DiagnosticCode code)
+    {
+        while (node is BindingElementNode or BindingPatternNode)
+            node = node.Parent!;
+        ReportUnused(node, location, code, node is ParameterDeclarationNode);
+    }
+
+    private void CheckUnusedClass(SyntaxNode node)
+    {
+        var members = node is ClassDeclarationNode declaration ? declaration.Members! : ((ClassExpressionNode)node).Members!;
+        foreach (var member in members)
+        {
+            if (member is MethodDeclarationNode or PropertyDeclarationNode or GetAccessorDeclarationNode or SetAccessorDeclarationNode)
+            {
+                var symbol = program.Symbols.Declaration(member)!;
+                if (member is SetAccessorDeclarationNode && (symbol.Flags & SymbolFlags.GetAccessor) != 0)
+                    continue;
+                if (program.Symbols.ReferenceKinds(symbol) == 0
+                    && (SemanticSyntax.HasModifier(member, SyntaxKind.PrivateKeyword)
+                        || SemanticSyntax.Name(member) is PrivateIdentifierNode))
+                    ReportUnused(member, SemanticSyntax.Name(member)!, DiagnosticCode.X0IsDeclaredButItsValueIsNeverRead, false);
+            }
+            else if (member is ConstructorDeclarationNode constructor)
+                foreach (var parameter in constructor.Parameters!)
+                    if (program.Symbols.ReferenceKinds(program.Symbols.Declaration(parameter)!) == 0
+                        && SemanticSyntax.HasModifier(parameter, SyntaxKind.PrivateKeyword))
+                        ReportUnused(
+                            parameter,
+                            SemanticSyntax.Name(parameter)!,
+                            DiagnosticCode.Property0IsDeclaredButItsValueIsNeverRead,
+                            false);
+        }
+    }
+
+    private void CheckUnusedLocals(SyntaxNode node)
+    {
+        var locals = program.Symbols.Binding(node)?.Get(node)?.Locals;
+        if (locals is null)
+            return;
+        var variableParents = new HashSet<SyntaxNode>();
+        var imports = new Dictionary<ImportClauseNode, List<SyntaxNode>>();
+        foreach (var local in locals.Values)
+        {
+            var referenced = program.Symbols.ReferenceKinds(local);
+            if ((local.Flags & SymbolFlags.TypeParameter) != 0
+                ? (local.Flags & SymbolFlags.Variable) == 0 || (referenced & SymbolFlags.Variable) != 0
+                : referenced != 0 || local.ExportSymbol is not null || (local.Flags & SymbolFlags.ModuleExports) != 0)
+                continue;
+            foreach (var declaration in local.Declarations)
+            {
+                if (declaration is VariableDeclarationNode or ParameterDeclarationNode or BindingElementNode)
+                    variableParents.Add(SemanticSyntax.RootDeclaration(declaration).Parent!);
+                else if (declaration is ImportClauseNode or ImportSpecifierNode or NamespaceImportNode)
+                {
+                    if (StartsWithUnderscore(SemanticSyntax.Name(declaration)))
+                        continue;
+                    var clause = declaration as ImportClauseNode ?? (ImportClauseNode)(declaration is NamespaceImportNode
+                        ? declaration.Parent!
+                        : declaration.Parent!.Parent!);
+                    if (!imports.TryGetValue(clause, out var unused))
+                        imports.Add(clause, unused = []);
+                    unused.Add(declaration);
+                }
+                else if (declaration is not TypeParameterDeclarationNode && !AmbientModule(declaration))
+                    ReportUnusedLocal(declaration);
+            }
+        }
+        foreach (var parent in variableParents)
+            if (parent is VariableDeclarationListNode list && list.Declarations!.Count > 1 && list.Declarations.All(UnreferencedVariable))
+                ReportUnusedVariable(list, list, DiagnosticCode.AllVariablesAreUnused);
+            else
+                ReportUnusedVariables(
+                    parent is VariableDeclarationListNode variables ? variables.Declarations! : ((IFunctionSignature)parent).Parameters!);
+        foreach (var (clause, unused) in imports)
+        {
+            int count = clause.Name is null ? 0 : 1;
+            count += clause.NamedBindings is NamespaceImportNode ? 1 : (clause.NamedBindings as NamedImportsNode)?.Elements?.Count ?? 0;
+            if (count > 1 && count == unused.Count)
+                ReportUnused(clause, clause.Parent!, DiagnosticCode.AllImportsInImportDeclarationAreUnused, false);
+            else
+                foreach (var declaration in unused)
+                    ReportUnusedLocal(declaration);
+        }
+    }
+
+    private void ReportUnusedLocal(SyntaxNode node)
+    {
+        bool type = node is TypeParameterDeclarationNode or ClassDeclarationNode or InterfaceDeclarationNode or TypeAliasDeclarationNode
+            or EnumDeclarationNode
+            || node is ImportClauseNode && SemanticSyntax.TypeOnly(node)
+            || node is ImportSpecifierNode or ExportSpecifierNode && node.Parent?.Parent is { } parent && SemanticSyntax.TypeOnly(parent);
+        ReportUnused(
+            node,
+            SemanticSyntax.Name(node) ?? node,
+            type ? DiagnosticCode.X0IsDeclaredButNeverUsed : DiagnosticCode.X0IsDeclaredButItsValueIsNeverRead,
+            false);
+    }
+
+    private void ReportUnusedVariables(IEnumerable<SyntaxNode> declarations)
+    {
+        var pending = new Stack<SyntaxNode>(declarations.Reverse());
+        while (pending.TryPop(out var declaration))
+        {
+            var name = SemanticSyntax.Name(declaration);
+            if (name is null
+                || DeclarationOrder.ParameterProperty(declaration)
+                || declaration is ParameterDeclarationNode { Name: IdentifierNode { Text.Span: var matchedText } } && matchedText.SequenceEqual("this"u8))
+                continue;
+            if (name is BindingPatternNode pattern)
+            {
+                if (pattern.Elements!.Count > 1 && pattern.Elements.All(UnreferencedVariable))
+                    ReportUnusedVariable(pattern, pattern, DiagnosticCode.AllDestructuredElementsAreUnused);
+                else
+                    for (int i = pattern.Elements.Count - 1; i >= 0; i--)
+                        pending.Push(pattern.Elements[i]);
+            }
+            else if (UnreferencedVariable(declaration))
+                ReportUnusedVariable(declaration, name, DiagnosticCode.X0IsDeclaredButItsValueIsNeverRead);
+        }
+    }
+
+    private bool UnreferencedVariable(SyntaxNode node)
+    {
+        var pending = new Stack<SyntaxNode>();
+        pending.Push(node);
+        while (pending.TryPop(out var declaration))
+        {
+            var name = SemanticSyntax.Name(declaration);
+            if (name is null)
+                continue;
+            if (name is BindingPatternNode pattern)
+            {
+                foreach (var element in pattern.Elements!)
+                    pending.Push(element);
+                continue;
+            }
+            if ((program.Symbols.ReferenceKinds(program.Symbols.Declaration(declaration)!) & SymbolFlags.Variable) != 0)
+                return false;
+            if (declaration is BindingElementNode
+                && declaration.Parent is BindingPatternNode { Kind: SyntaxKind.ObjectBindingPattern } objectPattern
+                && objectPattern.Elements!.LastOrDefault() is BindingElementNode { DotDotDotToken: not null } last && declaration != last)
+                return false;
+            bool ignoredUnderscore = declaration is ParameterDeclarationNode
+                || declaration is VariableDeclarationNode variable
+                    && (variable.Parent?.Parent is ForInOrOfStatementNode || (variable.Parent!.Flags & NodeFlags.Using) != 0)
+                || declaration is BindingElementNode binding
+                    && (binding.Parent?.Kind != SyntaxKind.ObjectBindingPattern || binding.PropertyName is not null);
+            if (ignoredUnderscore && StartsWithUnderscore(name))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool StartsWithUnderscore(SyntaxNode? node) => node is IdentifierNode identifier && identifier.Text.Span.StartsWith((byte)'_');
+
+    private bool UnreferencedTypeParameter(SyntaxNode parameter) => !StartsWithUnderscore(SemanticSyntax.Name(parameter))
+        && (program.Symbols.ReferenceKinds(program.Symbols.Declaration(parameter)!) & SymbolFlags.TypeParameter) == 0;
+
+    private void CheckUnusedTypeParameters(SyntaxNode node)
+    {
+        if (program.Symbols.Declaration(node) is { } symbol && symbol.Declarations.Select(SemanticSyntax.Source).Distinct().Skip(1).Any())
+            return;
+        var parameters = node switch
+        {
+            IFunctionSignature signature => signature.TypeParameters,
+            ClassDeclarationNode declaration => declaration.TypeParameters,
+            ClassExpressionNode expression => expression.TypeParameters,
+            InterfaceDeclarationNode declaration => declaration.TypeParameters,
+            TypeAliasDeclarationNode alias => alias.TypeParameters,
+            _ => null
+        };
+        if (parameters is null)
+            return;
+        if (parameters.Count > 1 && parameters.All(UnreferencedTypeParameter))
+            ReportUnused(node, node, DiagnosticCode.AllTypeParametersAreUnused, true, parameters);
+        else
+            foreach (var parameter in parameters)
+                if (UnreferencedTypeParameter(parameter))
+                    ReportUnused(node, parameter, DiagnosticCode.X0IsDeclaredButNeverUsed, true);
+    }
+}
