@@ -11,8 +11,26 @@ internal sealed class ContextualProperties(TypeContext context, CheckerLinks lin
     MappedMembers mappedMembers, IndexedTypes indexed, IndexSignatures indexes, TupleTypes tuples,
     TypeConstraints constraints, TypeViews views, TypeRelations relations, TypeResolutionStack resolutions)
 {
-    internal ValueTask<Type?> GetAsync(Type type, Utf8String name, Type? nameType = null, CancellationToken cancellation = default)
-        => algebra.MapAsync(type, async part =>
+    internal async ValueTask<Type?> GetAsync(Type type, Utf8String name, Type? nameType = null, CancellationToken cancellation = default)
+    {
+        // The common case is a single object type, and going through MapAsync would allocate a closure
+        // and an async state machine for it on every contextual property query. Only the union case
+        // needs the mapping machinery.
+        if (type is not UnionType)
+        {
+            if ((type.Flags & TypeFlags.Never) != 0)
+                return type;
+            var single = await ConstituentAsync(type, name, nameType, cancellation).ConfigureAwait(false);
+            if (single is not null)
+                context.RequireOwned(single);
+            return single;
+        }
+        return await algebra.MapAsync(type, part => ConstituentAsync(part, name, nameType, cancellation), true, cancellation)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<Type?> ConstituentAsync(Type part, Utf8String name, Type? nameType, CancellationToken cancellation)
+    {
         {
             if (part is IntersectionType intersection)
             {
@@ -55,7 +73,8 @@ internal sealed class ContextualProperties(TypeContext context, CheckerLinks lin
                 return await MappedAsync((MappedType)part, name, nameType, cancellation).ConfigureAwait(false);
             return await ConcreteAsync(part, name, cancellation).ConfigureAwait(false)
                 ?? await IndexAsync(part, name, nameType, cancellation).ConfigureAwait(false);
-        }, true, cancellation);
+        }
+    }
 
     private async ValueTask<bool> GenericMappedAsync(Type type, CancellationToken cancellation) => type is MappedType mapping
         && await mapped.IsGenericAsync(mapping, cancellation).ConfigureAwait(false)
