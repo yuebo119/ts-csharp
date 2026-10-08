@@ -119,6 +119,9 @@ public sealed partial class CompilerProgram
         private bool skipped;
         private Utf8String NewLine => options.NewLine == NewLineKind.CRLF ? "\r\n"u8 : "\n"u8;
 
+        /// <summary>Statement count from which overlapping the two transforms pays for the thread hand-off.</summary>
+        private const int ParallelTransformMinStatements = 512;
+
         internal async ValueTask<EmitResult> EmitAsync(EmitOutputPaths paths)
         {
             // The JavaScript and declaration outputs of one file are independent: separate trees,
@@ -137,8 +140,11 @@ public sealed partial class CompilerProgram
                 bool wantDeclaration = emitOptions.Only != EmitOnly.JavaScript && paths.Declaration.Length != 0;
                 bool javascriptBlocked = wantJavaScript && !emitOptions.Force
                     && (options.NoEmit == true || program.IsEmitBlocked(paths.JavaScript));
+                // Starting the second transform on a worker costs a thread hand-off and, for small
+                // files, buys nothing: the two transforms together finish faster than the hand-off.
                 if (wantJavaScript && !javascriptBlocked && wantDeclaration && emitOptions.PipelineDeclarationTransform
-                    && !emitOptions.Force && ScriptTransformer.IsCheckerFree(source, options))
+                    && !emitOptions.Force && source.Statements is { Count: >= ParallelTransformMinStatements }
+                    && ScriptTransformer.IsCheckerFree(source, options))
                 {
                     // Prime the program's per-file caches on this thread before either transform reads
                     // them concurrently.
