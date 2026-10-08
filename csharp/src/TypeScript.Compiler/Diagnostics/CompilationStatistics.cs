@@ -20,6 +20,8 @@ internal sealed record CompilationStatistics
     internal double EmitTime { get; init; }
     internal double TransformTime { get; init; }
     internal double PrintTime { get; init; }
+    /// <summary>Per-transformer wall time, summed across files (diagnostics only).</summary>
+    internal Dictionary<string, double> TransformPasses { get; init; } = [];
     internal double BuildInfoTime { get; init; }
     internal double ChangesTime { get; init; }
     internal double TotalTime { get; init; }
@@ -92,6 +94,9 @@ internal sealed record CompilationStatistics
             Count("EmitContext comment sets", CommentSets);
             Count("LinkStore creates", LinkCreates);
         }
+        if (TransformPasses.Count != 0)
+            foreach (var (name, seconds) in TransformPasses.OrderByDescending(pass => pass.Value).Take(16))
+                Time(name, seconds);
         int nameWidth = rows.Max(row => row.Name.Length) + 1, valueWidth = rows.Max(row => row.Value.Length);
         foreach (var row in rows) output.WriteLine((row.Name + ":").PadRight(nameWidth) + " " + row.Value.PadLeft(valueWidth));
     }

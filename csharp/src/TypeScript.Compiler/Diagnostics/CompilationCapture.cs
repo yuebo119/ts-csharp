@@ -166,6 +166,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
         }
         double Seconds(Utf8String category) => durations.GetValueOrDefault(category) / (double)Stopwatch.Frequency;
         long Allocated(Utf8String category) => allocations.GetValueOrDefault(category);
+        string[] passes = [.. durations.Keys.Where(key => key.Span.StartsWith("xform:"u8)).Select(key => key.ToString())];
         return new()
         {
             Files = program.SourceFiles.Count, Lines = program.SourceFiles.Sum(file => file.Syntax.Source.LineStarts.Length),
@@ -181,6 +182,9 @@ internal sealed class CompilationCapture : IAsyncDisposable
             AllocatedTransform = Allocated("transform"u8), AllocatedPrint = Allocated("print"u8),
             CheckKindAllocations = (long[])checkKindAllocations.Clone(),
             TransformKindAllocations = (long[])transformKindAllocations.Clone(),
+            TransformPasses = passes.ToDictionary(
+                name => name,
+                name => durations.GetValueOrDefault(Utf8String.FromString(name)) / (double)Stopwatch.Frequency),
             ProbeAllocations = (long[])probeAllocations.Clone(),
             CommentAdds = Volatile.Read(ref commentAdds), CommentSets = Volatile.Read(ref commentSets),
             NodeDataCalls = Volatile.Read(ref nodeDataCalls), LinkCreates = Volatile.Read(ref linkCreates),
