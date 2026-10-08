@@ -29,8 +29,14 @@ internal static class ScriptTransformer
         if (options.EmitDecoratorMetadata == true) await Apply("xform:Metadata"u8, new MetadataTransformer(context, options, checker, cancellation));
         await Apply("xform:TypeEraser"u8, new TypeEraser(context, options, cancellation));
         if (options.VerbatimModuleSyntax != true && source.ScriptKind is not (ScriptKind.JS or ScriptKind.JSX))
-            await Apply("xform:ImportElision"u8, new ImportElision(context, options, checker, cancellation));
-        await Apply("xform:RuntimeSyntax"u8, new RuntimeSyntaxTransformer(context, options, checker, cancellation));
+            await Apply("xform:ImportElision"u8, new ImportElision(context, options, checker,
+                (features & SourceFeatures.Flags.ModuleSyntax) != 0, cancellation));
+        // The runtime pass strips TypeScript-only modifiers and rewrites enum, namespace and class
+        // bodies; without any of that syntax it can only return the tree unchanged.
+        const SourceFeatures.Flags runtimeSyntaxTriggers = SourceFeatures.Flags.Class | SourceFeatures.Flags.Enum
+            | SourceFeatures.Flags.Namespace | SourceFeatures.Flags.TsModifier | SourceFeatures.Flags.ImportEquals;
+        if ((features & runtimeSyntaxTriggers) != 0)
+            await Apply("xform:RuntimeSyntax"u8, new RuntimeSyntaxTransformer(context, options, checker, cancellation));
         if (options.ExperimentalDecorators == true) await Apply("xform:LegacyDecorators"u8, new LegacyDecoratorsTransformer(context, options, checker, cancellation));
         if (options.Jsx is JsxEmit.React or JsxEmit.ReactJSX or JsxEmit.ReactJSXDev && source.ScriptKind is ScriptKind.TSX or ScriptKind.JSX)
             await Apply("xform:Jsx"u8, new JsxTransformer(context, options, checker, cancellation));

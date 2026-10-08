@@ -23,6 +23,20 @@ internal static class SourceFeatures
         Using = 4,
         /// <summary>Property/element accesses: the const-enum inliner only replaces those.</summary>
         Access = 8,
+        /// <summary>Enum declarations: the runtime pass drops or transforms them.</summary>
+        Enum = 16,
+        /// <summary>Namespace/module declarations: the runtime pass transforms their bodies.</summary>
+        Namespace = 32,
+        /// <summary>TypeScript-only modifiers: the runtime pass strips them from emitted output.</summary>
+        TsModifier = 64,
+        /// <summary>`import x = ...` declarations: both the runtime pass and module rewriting handle them.</summary>
+        ImportEquals = 128,
+        /// <summary>
+        /// Syntax that can create an aliased reference: import/export declarations, `export =`,
+        /// import-equals and JSX elements (their factory names are marked as aliases too). Only files
+        /// with one of these need the checker-side linked-reference marking before emit.
+        /// </summary>
+        ModuleSyntax = 256,
         All = Class | Decorator | Using | Access
     }
 
@@ -41,6 +55,14 @@ internal static class SourceFeatures
                 VariableDeclarationListNode list when (list.Flags & NodeFlags.BlockScoped) is NodeFlags.Using or NodeFlags.AwaitUsing
                     => Flags.Using,
                 PropertyAccessExpressionNode or ElementAccessExpressionNode => Flags.Access,
+                EnumDeclarationNode => Flags.Enum,
+                ModuleDeclarationNode => Flags.Namespace,
+                ImportEqualsDeclarationNode => Flags.ImportEquals | Flags.ModuleSyntax,
+                ImportDeclarationNode or ExportDeclarationNode or ExportAssignmentNode or NamespaceExportDeclarationNode
+                    => Flags.ModuleSyntax,
+                JsxOpeningElementNode or JsxSelfClosingElementNode or JsxOpeningFragmentNode => Flags.ModuleSyntax,
+                TokenNode token when token.Kind is SyntaxKind.PublicKeyword or SyntaxKind.PrivateKeyword
+                    or SyntaxKind.ProtectedKeyword or SyntaxKind.ReadonlyKeyword or SyntaxKind.OverrideKeyword => Flags.TsModifier,
                 _ => Flags.None
             };
             if (features == Flags.All)
