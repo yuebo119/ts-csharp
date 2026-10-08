@@ -113,7 +113,7 @@ JS 变换 0.98 → 0.66 s，emit 1.08 → 0.85 s。
 | --- | --- |
 | 构建 | 0 警告 / 0 错误（产品形态 AOT，28.4 MB） |
 | 逐字节一致 | `AB54/AB56/AB57` 全部批次、23 负载 × 15 对；另加 16 个语句形态夹具（函数、类、块、无分号 ASI、序言指令、shebang、空行、模板字面量、字符串里的注释标记、装饰器类、`using`、同文件与跨文件 const enum、私有字段）× JS/声明/仅声明/无声明/sourceMap/declarationMap 组合，全部与 r05c 未改动 AOT 产物逐字节一致 |
-| safety 套件 | 本轮实跑 20 个相关套件，19 通过；`program-emit-safety` 在未改动基线上同样失败（`Program emit assertion 14`） |
+| safety 套件 | 全量 95 个旗标中 93 个可直接调用（另 2 个需要目录参数）：**91 通过**，2 项失败均为既有基线失败——`program-emit-safety`（本轮用 `git stash` 回调未改动基线实测同一条断言 `Program emit assertion 14`）与 `npm-process-safety`（环境性不稳定，r05 已记录基线同样失败） |
 | 测量口径 | 噪声 23~29%（本机同时有 Roslyn 语言服务索引），所有结论取自同批次交替配对；绝对值跨批次不可比 |
 
 ---
