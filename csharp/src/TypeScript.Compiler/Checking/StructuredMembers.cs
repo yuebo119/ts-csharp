@@ -65,7 +65,6 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         var oldIndexes = type.IndexInfos;
         var oldFlags = type.ObjectFlags & (O.MembersResolved | O.UnresolvedMembers);
         long allocMark = Diagnostics.CompilationCapture.Mark();
-        using var checkScope = Diagnostics.CompilationCapture.Measure("check:resolveMembers"u8);
         try
         {
             switch (type)
@@ -313,7 +312,6 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
     {
         cancellation.ThrowIfCancellationRequested();
         long allocMark = Diagnostics.CompilationCapture.Mark();
-        using var checkScope = Diagnostics.CompilationCapture.Measure("check:setMembers"u8);
         try
         {
             await SetCoreAsync(type, members, calls, constructors, indexes, cancellation).ConfigureAwait(false);

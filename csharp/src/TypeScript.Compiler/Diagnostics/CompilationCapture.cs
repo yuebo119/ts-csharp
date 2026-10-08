@@ -59,15 +59,20 @@ internal sealed class CompilationCapture : IAsyncDisposable
     /// </summary>
     internal static bool ProbesEnabled => Volatile.Read(ref activeCaptures) != 0;
 
-    /// <summary>Allocation mark for an inclusive probe frame; 0 when no probe run is active.</summary>
-    internal static long Mark() => ProbesEnabled ? GC.GetTotalAllocatedBytes() : 0;
+    /// <summary>
+    /// Allocation mark for an inclusive probe frame; 0 when no probe run is active. Uses the
+    /// per-thread counter: probes are collected only for diagnostic runs, but they still fire on hot
+    /// paths, and the per-thread read is what keeps that affordable. Attribution is also more exact
+    /// than the process-wide counter when several checkers run in parallel.
+    /// </summary>
+    internal static long Mark() => ProbesEnabled ? GC.GetAllocatedBytesForCurrentThread() : 0;
 
     /// <summary>Reports the allocation performed since <paramref name="mark"/>; no-op without a capture.</summary>
     internal static void Report(int id, long mark)
     {
         if (mark == 0 || Current is not { } capture)
             return;
-        capture.NoteProbe(id, GC.GetTotalAllocatedBytes() - mark);
+        capture.NoteProbe(id, GC.GetAllocatedBytesForCurrentThread() - mark);
     }
     private readonly long started = Stopwatch.GetTimestamp();
     private readonly long allocated = GC.GetTotalAllocatedBytes();
@@ -166,7 +171,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
         }
         double Seconds(Utf8String category) => durations.GetValueOrDefault(category) / (double)Stopwatch.Frequency;
         long Allocated(Utf8String category) => allocations.GetValueOrDefault(category);
-        string[] passes = [.. durations.Keys.Where(key => key.Span.StartsWith("xform:"u8) || key.Span.StartsWith("check:"u8)).Select(key => key.ToString())];
+        string[] passes = [.. durations.Keys.Where(key => key.Span.StartsWith("xform:"u8)).Select(key => key.ToString())];
         return new()
         {
             Files = program.SourceFiles.Count, Lines = program.SourceFiles.Sum(file => file.Syntax.Source.LineStarts.Length),

@@ -50,7 +50,6 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
         CancellationToken cancellation = default)
     {
         long allocMark = Diagnostics.CompilationCapture.Mark();
-        using var checkScope = Diagnostics.CompilationCapture.Measure("check:objectLiteral"u8);
         try
         {
             return await CheckCoreAsync(node, mode, cancellation).ConfigureAwait(false);
