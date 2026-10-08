@@ -35,6 +35,40 @@ internal sealed class CompilationCapture : IAsyncDisposable
         if (bytes > 0 && (uint)kind < (uint)checkKindAllocations.Length)
             Interlocked.Add(ref checkKindAllocations[kind], bytes);
     }
+
+    private readonly long[] probeAllocations = new long[AllocationProbes.Count];
+    private long commentAdds, commentSets, nodeDataCalls, linkCreates;
+
+    private void NoteProbe(int id, long bytes)
+    {
+        if (bytes > 0 && (uint)id < (uint)probeAllocations.Length)
+            Interlocked.Add(ref probeAllocations[id], bytes);
+    }
+
+    internal void NoteCommentAdd() => Interlocked.Increment(ref commentAdds);
+    internal void NoteCommentSet() => Interlocked.Increment(ref commentSets);
+    internal void NoteNodeData() => Interlocked.Increment(ref nodeDataCalls);
+    internal void NoteLinkCreate() => Interlocked.Increment(ref linkCreates);
+
+    private static int activeCaptures;
+
+    /// <summary>
+    /// True while any capture is active. Checked by every probe call site, so it must stay a plain
+    /// static read: allocation probes are only collected for diagnostic runs, and a normal compile
+    /// must not pay an <c>AsyncLocal</c> read on its hot paths.
+    /// </summary>
+    internal static bool ProbesEnabled => Volatile.Read(ref activeCaptures) != 0;
+
+    /// <summary>Allocation mark for an inclusive probe frame; 0 when no probe run is active.</summary>
+    internal static long Mark() => ProbesEnabled ? GC.GetTotalAllocatedBytes() : 0;
+
+    /// <summary>Reports the allocation performed since <paramref name="mark"/>; no-op without a capture.</summary>
+    internal static void Report(int id, long mark)
+    {
+        if (mark == 0 || Current is not { } capture)
+            return;
+        capture.NoteProbe(id, GC.GetTotalAllocatedBytes() - mark);
+    }
     private readonly long started = Stopwatch.GetTimestamp();
     private readonly long allocated = GC.GetTotalAllocatedBytes();
     private readonly ConcurrentDictionary<Utf8String, long> durations = new();
@@ -57,6 +91,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
             { warnings.WriteLine($"Warning: Failed to start tracing: {error.Message}"); }
         }
         ambient.Value = this;
+        Interlocked.Increment(ref activeCaptures);
     }
 
     internal static CompilationCapture? Start(IFileSystem fileSystem, Utf8String currentDirectory, ParsedConfig config,
@@ -145,6 +180,9 @@ internal sealed class CompilationCapture : IAsyncDisposable
             AllocatedTransform = Allocated("transform"u8), AllocatedPrint = Allocated("print"u8),
             CheckKindAllocations = (long[])checkKindAllocations.Clone(),
             TransformKindAllocations = (long[])transformKindAllocations.Clone(),
+            ProbeAllocations = (long[])probeAllocations.Clone(),
+            CommentAdds = Volatile.Read(ref commentAdds), CommentSets = Volatile.Read(ref commentSets),
+            NodeDataCalls = Volatile.Read(ref nodeDataCalls), LinkCreates = Volatile.Read(ref linkCreates),
         };
     }
 
@@ -165,6 +203,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
         finally
         {
             disposed = true;
+            Interlocked.Decrement(ref activeCaptures);
             lock (contexts)
             {
                 foreach (var reference in contexts)

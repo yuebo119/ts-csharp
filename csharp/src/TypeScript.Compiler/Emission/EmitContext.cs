@@ -53,7 +53,10 @@ public sealed partial class EmitContext
     internal NodeData Data(SyntaxNode node)
     {
         if (!nodes.TryGetValue(node, out var data))
+        {
+            Diagnostics.CompilationCapture.Current?.NoteNodeData();
             nodes.Add(node, data = new());
+        }
         return data;
     }
 
@@ -129,10 +132,29 @@ public sealed partial class EmitContext
     public void SetTokenSourceMapRange(SyntaxNode node, SyntaxKind token, EmitRange range) => (Data(node).TokenRanges ??= [])[token] = range;
     public IReadOnlyList<SyntheticComment> LeadingComments(SyntaxNode node) => TryData(node)?.LeadingComments ?? [];
     public IReadOnlyList<SyntheticComment> TrailingComments(SyntaxNode node) => TryData(node)?.TrailingComments ?? [];
-    public void AddLeadingComment(SyntaxNode node, SyntheticComment comment) => (Data(node).LeadingComments ??= []).Add(comment);
-    public void AddTrailingComment(SyntaxNode node, SyntheticComment comment) => (Data(node).TrailingComments ??= []).Add(comment);
-    public void SetLeadingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments) => Data(node).LeadingComments = [.. comments];
-    public void SetTrailingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments) => Data(node).TrailingComments = [.. comments];
+    public void AddLeadingComment(SyntaxNode node, SyntheticComment comment)
+    {
+        Diagnostics.CompilationCapture.Current?.NoteCommentAdd();
+        (Data(node).LeadingComments ??= []).Add(comment);
+    }
+
+    public void AddTrailingComment(SyntaxNode node, SyntheticComment comment)
+    {
+        Diagnostics.CompilationCapture.Current?.NoteCommentAdd();
+        (Data(node).TrailingComments ??= []).Add(comment);
+    }
+
+    public void SetLeadingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments)
+    {
+        Diagnostics.CompilationCapture.Current?.NoteCommentSet();
+        Data(node).LeadingComments = [.. comments];
+    }
+
+    public void SetTrailingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments)
+    {
+        Diagnostics.CompilationCapture.Current?.NoteCommentSet();
+        Data(node).TrailingComments = [.. comments];
+    }
 
     public void RequestHelper(EmitHelper helper)
     {
