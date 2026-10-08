@@ -39,6 +39,7 @@ internal sealed class SymbolTypes(TypeContext context, CheckerLinks links, Check
             ? ConfigureAwaitOptions.None : ConfigureAwaitOptions.ForceYielding);
         cancellation.ThrowIfCancellationRequested();
         long symbolMark = Diagnostics.CompilationCapture.Mark();
+        using var checkScope = Diagnostics.CompilationCapture.Measure("check:symbolTypes"u8);
         try
         {
             return await GetCoreAsync(symbol, cancellation).ConfigureAwait(false);

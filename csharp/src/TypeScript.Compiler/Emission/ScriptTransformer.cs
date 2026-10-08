@@ -10,6 +10,25 @@ namespace TypeScript.Compiler.Emission;
 
 internal static class ScriptTransformer
 {
+    /// <summary>
+    /// True when the JavaScript transform provably never calls the checker, which is the only shared
+    /// mutable state between it and the declaration transform. The checker-using passes are exactly
+    /// the ones the feature scan already gates (imports/JSX for elision marking, enum/namespace/
+    /// class/decorator/access syntax for the rest), so their absence lets both transforms run at once
+    /// instead of racing one print against the other transform.
+    /// </summary>
+    internal static bool IsCheckerFree(SourceFileNode source, CompilerOptions options)
+    {
+        if (options.EmitDecoratorMetadata == true) return false;
+        if (source.ScriptKind is ScriptKind.TSX or ScriptKind.JSX) return false;
+        if (options.EmitModule is not (ModuleKind.ES2015 or ModuleKind.ES2020 or ModuleKind.ES2022
+            or ModuleKind.ESNext or ModuleKind.Preserve)) return false;
+        const SourceFeatures.Flags checkerTouching = SourceFeatures.Flags.ModuleSyntax | SourceFeatures.Flags.Class
+            | SourceFeatures.Flags.Decorator | SourceFeatures.Flags.Access | SourceFeatures.Flags.Enum
+            | SourceFeatures.Flags.Namespace | SourceFeatures.Flags.TsModifier | SourceFeatures.Flags.ImportEquals;
+        return (SourceFeatures.Scan(source) & checkerTouching) == 0;
+    }
+
     internal static async ValueTask<SourceFileNode> TransformAsync(SourceFileNode source, EmitContext context,
         CompilerProgram program, Checker checker, CancellationToken cancellation)
     {

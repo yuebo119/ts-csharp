@@ -108,6 +108,7 @@ internal sealed class TypeRelations(TypeContext context, TypeNormalization norma
         context.RequireOwned(source);
         context.RequireOwned(target);
         long allocMark = Diagnostics.CompilationCapture.Mark();
+        using var checkScope = Diagnostics.CompilationCapture.Measure("check:relation"u8);
         try
         {
             return await RelatedCoreAsync(source, target, kind, cancellation).ConfigureAwait(false);

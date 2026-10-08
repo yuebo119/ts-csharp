@@ -378,6 +378,7 @@ internal sealed partial class Checker : ITypeNodeHost, IDeclaredTypeHost, ITypeR
     {
         BeforeMemberTable?.Invoke(symbol);
         long allocMark = TypeScript.Compiler.Diagnostics.CompilationCapture.Mark();
+        using var checkScope = TypeScript.Compiler.Diagnostics.CompilationCapture.Measure("check:membersTable"u8);
         try
         {
             return await LateMembers.TableAsync(symbol, cancellation: cancellation).ConfigureAwait(false);
