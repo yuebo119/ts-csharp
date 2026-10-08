@@ -451,17 +451,40 @@ internal sealed class ExpressionContexts(TypeContext context, TypeAlgebra algebr
 
     internal async ValueTask<Type> MutableAsync(SyntaxNode node, CheckMode mode, CancellationToken cancellation = default)
     {
-        var type = await host.CheckExpressionAsync(node, mode, cancellation).ConfigureAwait(false);
-        if (await ConstAsync(node, cancellation).ConfigureAwait(false))
-            return await algebra.RegularTypeAsync(type, cancellation).ConfigureAwait(false);
-        if (node is AsExpressionNode or TypeAssertionNode)
-            return type;
-        var contextual = await InstantiateAsync(
-            await GetAsync(node, cancellation: cancellation).ConfigureAwait(false),
-            node,
-            0,
-            cancellation).ConfigureAwait(false);
-        return await WidenLiteralAsync(type, contextual, cancellation).ConfigureAwait(false);
+        Diagnostics.CompilationCapture.ProbeMark mutableMark = Diagnostics.CompilationCapture.Mark();
+        try
+        {
+            Diagnostics.CompilationCapture.ProbeMark checkMark = Diagnostics.CompilationCapture.Mark();
+            var type = await host.CheckExpressionAsync(node, mode, cancellation).ConfigureAwait(false);
+            Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.ObjectCheckExpr, checkMark);
+            Diagnostics.CompilationCapture.ProbeMark constMark = Diagnostics.CompilationCapture.Mark();
+            bool constant = await ConstAsync(node, cancellation).ConfigureAwait(false);
+            Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.MutableConst, constMark);
+            if (constant)
+                return await algebra.RegularTypeAsync(type, cancellation).ConfigureAwait(false);
+            if (node is AsExpressionNode or TypeAssertionNode)
+                return type;
+            Diagnostics.CompilationCapture.ProbeMark contextualMark = Diagnostics.CompilationCapture.Mark();
+            var contextual = await InstantiateAsync(
+                await GetAsync(node, cancellation: cancellation).ConfigureAwait(false),
+                node,
+                0,
+                cancellation).ConfigureAwait(false);
+            Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.MutableContextual, contextualMark);
+            Diagnostics.CompilationCapture.ProbeMark widenMark = Diagnostics.CompilationCapture.Mark();
+            try
+            {
+                return await WidenLiteralAsync(type, contextual, cancellation).ConfigureAwait(false);
+            }
+            finally
+            {
+                Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.MutableWiden, widenMark);
+            }
+        }
+        finally
+        {
+            Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.ObjectMutable, mutableMark);
+        }
     }
 
     internal async ValueTask<Type> WidenLiteralAsync(Type type, Type? contextual, CancellationToken cancellation = default)

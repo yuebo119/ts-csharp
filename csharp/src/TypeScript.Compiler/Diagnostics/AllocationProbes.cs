@@ -28,7 +28,14 @@ internal static class AllocationProbes
     internal const int ObjectPropertyInit = 16;
     internal const int ObjectPropertyBook = 17;
     internal const int CheckerRelated = 18;
-    internal const int Count = 19;
+    internal const int ObjectMutable = 19;
+    internal const int ObjectCheckExpr = 20;
+    internal const int RelationProperties = 21;
+    internal const int RelationExcess = 22;
+    internal const int MutableConst = 23;
+    internal const int MutableContextual = 24;
+    internal const int MutableWiden = 25;
+    internal const int Count = 26;
 
     internal static readonly string[] Names =
     [
@@ -36,5 +43,7 @@ internal static class AllocationProbes
         "widen", "widenObject", "relationCompare", "relationRelated", "objectLiteral", "variableType",
         "objectProperty", "objectType", "objectRegular", "symbolTypesGet", "linkGet",
         "objectPropertyInit", "objectPropertyBook", "checkerRelated",
+        "objectMutable", "objectCheckExpr", "relationProperties", "relationExcess",
+        "mutableConst", "mutableContextual", "mutableWiden",
     ];
 }
