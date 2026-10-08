@@ -1,9 +1,11 @@
 namespace TypeScript.Compiler.Diagnostics;
 
 /// <summary>
-/// Named method-level allocation probes used by <c>--extendedDiagnostics</c>. Frames are inclusive:
-/// a probe reports every byte allocated while it was active, including work done by nested probes,
-/// so the numbers are read top-down along the known nesting (variable type -> type node -> members).
+/// Named method-level probes used by <c>--extendedDiagnostics</c>. Frames are inclusive: a probe
+/// reports every byte allocated and every tick spent while it was active, including work done by
+/// nested probes, so the numbers are read top-down along the known nesting (variable type -> type
+/// node -> members). Collection is gated by a static flag, so a normal compile pays one predictable
+/// branch per site.
 /// </summary>
 internal static class AllocationProbes
 {
@@ -23,12 +25,16 @@ internal static class AllocationProbes
     internal const int ObjectRegular = 13;
     internal const int SymbolTypesGet = 14;
     internal const int LinkGet = 15;
-    internal const int Count = 16;
+    internal const int ObjectPropertyInit = 16;
+    internal const int ObjectPropertyBook = 17;
+    internal const int CheckerRelated = 18;
+    internal const int Count = 19;
 
     internal static readonly string[] Names =
     [
         "typeFromNode", "typeLiteral", "resolveMembers", "setMembers", "membersTable",
         "widen", "widenObject", "relationCompare", "relationRelated", "objectLiteral", "variableType",
         "objectProperty", "objectType", "objectRegular", "symbolTypesGet", "linkGet",
+        "objectPropertyInit", "objectPropertyBook", "checkerRelated",
     ];
 }
