@@ -22,6 +22,14 @@ internal sealed class CompilationCapture : IAsyncDisposable
     /// minus what its children already reported. Fills the checker half of the allocation map that
     /// the printer-side equivalent already covered.
     /// </summary>
+    private readonly long[] transformKindAllocations = new long[512];
+    /// <summary>Transform-phase counterpart of <see cref="NoteCheckKind"/>.</summary>
+    internal void NoteTransformKind(int kind, long bytes)
+    {
+        if (bytes > 0 && (uint)kind < (uint)transformKindAllocations.Length)
+            Interlocked.Add(ref transformKindAllocations[kind], bytes);
+    }
+
     internal void NoteCheckKind(int kind, long bytes)
     {
         if (bytes > 0 && (uint)kind < (uint)checkKindAllocations.Length)
@@ -80,13 +88,25 @@ internal sealed class CompilationCapture : IAsyncDisposable
     }
 
     /// <summary>Starts a scope for the active capture, or returns a no-op scope when none is active.</summary>
-    internal static Scope Measure(Utf8String category) => Current?.Begin(category, category) ?? default;
+    internal static Scope Measure(Utf8String category)
+    {
+        var capture = Current;
+        if (capture is null) return default;
+        // The transform attribution frames are only valid inside the transform scope: rewriters also
+        // run while printing, and counting those frames would double-book allocation across phases.
+        if (category == "transform"u8) transformDepth.Value++;
+        return capture.Begin(category, category);
+    }
+
+    private static readonly AsyncLocal<int> transformDepth = new();
+    internal static bool InTransformPhase => transformDepth.Value > 0;
 
     internal readonly struct Scope(CompilationCapture owner, Utf8String category, long started, long allocated, CompilationTrace.EventScope? trace) : IDisposable
     {
         public void Dispose()
         {
             if (owner is null || owner.disposed) return;
+            if (category == "transform"u8) transformDepth.Value--;
             long elapsed = Stopwatch.GetTimestamp() - started;
             owner.durations.AddOrUpdate(category, elapsed, (_, value) => value + elapsed);
             long growth = GC.GetTotalAllocatedBytes() - allocated;
@@ -124,6 +144,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
             AllocatedCheck = Allocated("check"u8), AllocatedEmit = Allocated("emit"u8),
             AllocatedTransform = Allocated("transform"u8), AllocatedPrint = Allocated("print"u8),
             CheckKindAllocations = (long[])checkKindAllocations.Clone(),
+            TransformKindAllocations = (long[])transformKindAllocations.Clone(),
         };
     }
 

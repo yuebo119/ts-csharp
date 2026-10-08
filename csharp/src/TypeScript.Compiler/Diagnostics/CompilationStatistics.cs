@@ -31,6 +31,7 @@ internal sealed record CompilationStatistics
     internal long AllocatedTransform { get; init; }
     internal long AllocatedPrint { get; init; }
     internal long[] CheckKindAllocations { get; init; } = [];
+    internal long[] TransformKindAllocations { get; init; } = [];
 
     internal void Report(TextWriter output, int? projects = null, int built = 0, int timestamps = 0)
     {
@@ -59,6 +60,13 @@ internal sealed record CompilationStatistics
                 .OrderByDescending(entry => entry.bytes).Take(12);
             foreach (var (bytes, kind) in top)
                 Count($"Check alloc kind {Enum.GetName(typeof(Syntax.SyntaxKind), kind) ?? kind.ToString(CultureInfo.InvariantCulture)}", bytes);
+        }
+        if (TransformKindAllocations.Length != 0)
+        {
+            var top = TransformKindAllocations.Select((bytes, kind) => (bytes, kind)).Where(entry => entry.bytes > 0)
+                .OrderByDescending(entry => entry.bytes).Take(12);
+            foreach (var (bytes, kind) in top)
+                Count($"Transform alloc kind {Enum.GetName(typeof(Syntax.SyntaxKind), kind) ?? kind.ToString(CultureInfo.InvariantCulture)}", bytes);
         }
         int nameWidth = rows.Max(row => row.Name.Length) + 1, valueWidth = rows.Max(row => row.Value.Length);
         foreach (var row in rows) output.WriteLine((row.Name + ":").PadRight(nameWidth) + " " + row.Value.PadLeft(valueWidth));

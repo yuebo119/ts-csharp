@@ -78,6 +78,22 @@ public sealed partial class EmitContext
         originals[node] = original;
     }
 
+    // Transform-phase allocation attribution frames (diagnostics only).
+    private readonly List<long> transformAllocationStack = [];
+
+    internal void PushTransformAllocationFrame() => transformAllocationStack.Add(0);
+
+    internal long PopTransformAllocationFrame(long mark)
+    {
+        long delta = GC.GetTotalAllocatedBytes() - mark;
+        long children = transformAllocationStack[^1];
+        transformAllocationStack.RemoveAt(transformAllocationStack.Count - 1);
+        // Hand this subtree's total to the parent so a frame only reports what its children did not.
+        if (transformAllocationStack.Count != 0)
+            transformAllocationStack[^1] += delta;
+        return Math.Max(0, delta - children);
+    }
+
     public SyntaxNode? Original(SyntaxNode node) => originals.GetValueOrDefault(node);
     public void UnsetOriginal(SyntaxNode node) => originals.Remove(node);
 
