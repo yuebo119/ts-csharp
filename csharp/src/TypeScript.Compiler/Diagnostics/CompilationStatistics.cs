@@ -18,6 +18,8 @@ internal sealed record CompilationStatistics
     internal double BindTime { get; init; }
     internal double CheckTime { get; init; }
     internal double EmitTime { get; init; }
+    internal double TransformTime { get; init; }
+    internal double PrintTime { get; init; }
     internal double BuildInfoTime { get; init; }
     internal double ChangesTime { get; init; }
     internal double TotalTime { get; init; }
@@ -55,7 +57,7 @@ internal sealed record CompilationStatistics
         Count("CLR managed bytes", ManagedBytes); Count("CLR allocated bytes", AllocatedBytes);
         Time("Config time", ConfigTime); Time("Program time", ProgramTime);
         Time("Parse time (summed)", ParseTime); Time("Bind time (summed)", BindTime); Time("Check time (summed)", CheckTime);
-        Time("Emit time (summed)", EmitTime); Time("BuildInfo read time", BuildInfoTime); Time("Changes compute time", ChangesTime); Time("Total time", TotalTime);
+        Time("Emit time (summed)", EmitTime); Time("Transform time (summed)", TransformTime); Time("Print time (summed)", PrintTime); Time("BuildInfo read time", BuildInfoTime); Time("Changes compute time", ChangesTime); Time("Total time", TotalTime);
         Count("Alloc program (summed)", AllocatedProgram); Count("Alloc parse (summed)", AllocatedParse); Count("Alloc bind (summed)", AllocatedBind);
         Count("Alloc check (summed)", AllocatedCheck); Count("Alloc emit (summed)", AllocatedEmit);
         Count("Alloc transform (summed)", AllocatedTransform); Count("Alloc print (summed)", AllocatedPrint);
