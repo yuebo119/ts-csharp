@@ -16,6 +16,17 @@ internal sealed class CompilationCapture : IAsyncDisposable
     private static readonly AsyncLocal<CompilationCapture?> ambient = new();
     internal static CompilationCapture? Current => ambient.Value;
     private readonly CompilationCapture? previous;
+    private readonly long[] checkKindAllocations = new long[512];
+    /// <summary>
+    /// Records the allocation a checked node is responsible for on its own, i.e. the subtree total
+    /// minus what its children already reported. Fills the checker half of the allocation map that
+    /// the printer-side equivalent already covered.
+    /// </summary>
+    internal void NoteCheckKind(int kind, long bytes)
+    {
+        if (bytes > 0 && (uint)kind < (uint)checkKindAllocations.Length)
+            Interlocked.Add(ref checkKindAllocations[kind], bytes);
+    }
     private readonly long started = Stopwatch.GetTimestamp();
     private readonly long allocated = GC.GetTotalAllocatedBytes();
     private readonly ConcurrentDictionary<Utf8String, long> durations = new();
@@ -112,6 +123,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
             AllocatedProgram = Allocated("program"u8), AllocatedParse = Allocated("parse"u8), AllocatedBind = Allocated("bind"u8),
             AllocatedCheck = Allocated("check"u8), AllocatedEmit = Allocated("emit"u8),
             AllocatedTransform = Allocated("transform"u8), AllocatedPrint = Allocated("print"u8),
+            CheckKindAllocations = (long[])checkKindAllocations.Clone(),
         };
     }
 
