@@ -35,7 +35,11 @@ internal static class AllocationProbes
     internal const int MutableConst = 23;
     internal const int MutableContextual = 24;
     internal const int MutableWiden = 25;
-    internal const int Count = 26;
+    internal const int CtxElement = 26;
+    internal const int CtxProperties = 27;
+    internal const int PropertyLookup = 28;
+    internal const int CtxApparent = 29;
+    internal const int Count = 30;
 
     internal static readonly string[] Names =
     [
@@ -45,5 +49,6 @@ internal static class AllocationProbes
         "objectPropertyInit", "objectPropertyBook", "checkerRelated",
         "objectMutable", "objectCheckExpr", "relationProperties", "relationExcess",
         "mutableConst", "mutableContextual", "mutableWiden",
+        "ctxElement", "ctxProperties", "propertyLookup", "ctxApparent",
     ];
 }

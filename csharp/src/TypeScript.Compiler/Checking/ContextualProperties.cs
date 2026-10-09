@@ -13,6 +13,19 @@ internal sealed class ContextualProperties(TypeContext context, CheckerLinks lin
 {
     internal async ValueTask<Type?> GetAsync(Type type, Utf8String name, Type? nameType = null, CancellationToken cancellation = default)
     {
+        Diagnostics.CompilationCapture.ProbeMark propertiesMark = Diagnostics.CompilationCapture.Mark();
+        try
+        {
+            return await GetCoreAsync(type, name, nameType, cancellation).ConfigureAwait(false);
+        }
+        finally
+        {
+            Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.CtxProperties, propertiesMark);
+        }
+    }
+
+    private async ValueTask<Type?> GetCoreAsync(Type type, Utf8String name, Type? nameType, CancellationToken cancellation)
+    {
         // The common case is a single object type, and going through MapAsync would allocate a closure
         // and an async state machine for it on every contextual property query. Only the union case
         // needs the mapping machinery.
