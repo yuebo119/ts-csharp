@@ -33,7 +33,9 @@
 | `Emit(PropertyAssignmentNode)` | `Push(6 参数)` | 四段 `Push` |
 | `Emit(PropertySignatureDeclarationNode)` | `Push(6 参数)` | 四段 `Push`（含 `Semicolon`） |
 
-**注意点**：`Push` 是后进先出，多段推入必须**按反序书写**（尾组先推、首组后推），否则打印顺序颠倒；每个 `Push` 保持在 ≤4 个参数以内（`params ReadOnlySpan<Part>` 超过 4 个参数时编译器会分配堆数组）。
+**注意点**：`Push` 是后进先出，多段推入必须**按反序书写**（尾组先推、首组后推），否则打印顺序颠倒。
+
+> **勘误（2026-10-09，r13 轮补测）**：本报告初版另写有"每个 `Push` 保持在 ≤4 个参数以内，否则 `params ReadOnlySpan<Part>` 会分配堆数组"，该说法**错误**。实测：`params ReadOnlySpan<T>` 在 17 个实参、100 万次调用下分配 **0 字节**，同规模 `params T[]` 分配 96 字节/次；Roslyn 会为任意实参个数合成栈上内联数组（产品 DLL 中可见 `<>y__InlineArray17` / `<>y__InlineArray19`）。因此拆分多段 `Push` 的收益只来自容器无关化本身，与参数个数无关，无需为控制实参个数而拆分。
 
 ### 2.2 工作栈容量预估
 
