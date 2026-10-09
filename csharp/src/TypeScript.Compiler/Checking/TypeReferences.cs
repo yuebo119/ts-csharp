@@ -143,11 +143,12 @@ internal sealed class TypeReferences(TypeContext context, CheckerLinks links, Ch
     internal async ValueTask<Type> ClassReferenceAsync(SyntaxNode node, Symbol symbol, CancellationToken cancellation)
     {
         var type = await scopes.ClassOrInterfaceAsync(symbols.Merger.GetMergedSymbol(symbol)!, cancellation).ConfigureAwait(false);
-        var parameters = type.AllTypeParameters.Skip(type.OuterTypeParameterCount)
-            .Take(
-                type.AllTypeParameters.Count - type.OuterTypeParameterCount - (type.ThisType is null
-                    ? 0
-                    : 1)).Cast<TypeParameter>().ToArray();
+        var allParameters = type.AllTypeParameters;
+        int skip = type.OuterTypeParameterCount;
+        int parameterCount = allParameters.Count - skip - (type.ThisType is null ? 0 : 1);
+        var parameters = parameterCount <= 0 ? [] : new TypeParameter[parameterCount];
+        for (int i = 0; i < parameterCount; i++)
+            parameters[i] = (TypeParameter)allParameters[skip + i];
         if (parameters.Length == 0)
             return NoArguments(node, symbol) ? type : context.ErrorType;
         int count = Arguments(node)?.Count ?? 0, minimum = Minimum(parameters);
