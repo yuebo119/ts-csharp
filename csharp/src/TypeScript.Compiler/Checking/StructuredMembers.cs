@@ -198,8 +198,25 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
                     await host.SignaturesAsync(instantiatedBase, true, cancellation).ConfigureAwait(false));
                 var inheritedIndexes = instantiatedBase == context.AnyType ? [anyBaseIndex]
                     : await host.IndexesAsync(instantiatedBase, cancellation).ConfigureAwait(false);
-                indexes = Array.AsReadOnly<IndexInfo>(
-                    [.. indexes, .. inheritedIndexes.Where(next => !indexes.Any(old => old.KeyType == next.KeyType))]);
+                // The merge is a per-base-type append of the inherited index infos whose key type the
+                // type does not declare yet. Doing it with one list and nested scans keeps the whole
+                // loop at a single allocation per base type instead of a LINQ chain (a Where enumerator
+                // plus an Any enumerator per inherited entry) over a fresh merged array.
+                var merged = new List<IndexInfo>(indexes.Count + inheritedIndexes.Count);
+                merged.AddRange(indexes);
+                foreach (var next in inheritedIndexes)
+                {
+                    bool duplicate = false;
+                    foreach (var old in indexes)
+                        if (old.KeyType == next.KeyType)
+                        {
+                            duplicate = true;
+                            break;
+                        }
+                    if (!duplicate)
+                        merged.Add(next);
+                }
+                indexes = merged.AsReadOnly();
             }
             type.ObjectFlags &= ~O.UnresolvedMembers;
         }
