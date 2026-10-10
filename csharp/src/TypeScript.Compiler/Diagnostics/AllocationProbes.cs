@@ -39,7 +39,19 @@ internal static class AllocationProbes
     internal const int CtxProperties = 27;
     internal const int PropertyLookup = 28;
     internal const int CtxApparent = 29;
-    internal const int Count = 30;
+    // Sub-frames of checkerRelated: the normalization target adjustment, the Simple/Comparable
+    // short circuits, the weak-type check and the identical-shape fast path. They split the
+    // frame's exclusive bytes without changing its inclusive number.
+    internal const int RelNormalize = 30;
+    internal const int RelSimple = 31;
+    internal const int RelWeak = 32;
+    internal const int RelIdentical = 33;
+    // The entry point's tail: the union/intersection dispatch and the recursive-session dispatch.
+    internal const int RelUnion = 34;
+    internal const int RelRecurse = 35;
+    // Relation-key construction, the remaining piece inside the recursive-session dispatch.
+    internal const int RelKeys = 36;
+    internal const int Count = 37;
 
     internal static readonly string[] Names =
     [
@@ -50,5 +62,6 @@ internal static class AllocationProbes
         "objectMutable", "objectCheckExpr", "relationProperties", "relationExcess",
         "mutableConst", "mutableContextual", "mutableWiden",
         "ctxElement", "ctxProperties", "propertyLookup", "ctxApparent",
+        "relNormalize", "relSimple", "relWeak", "relIdentical", "relUnion", "relRecurse", "relKeys",
     ];
 }
