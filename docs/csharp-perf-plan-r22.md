@@ -71,6 +71,8 @@ r21 独占探针（真实工程，总 837 MB）给出的"自己分配"排名与�
 
 ### 第三层 R：检查器同步化（1~2 月，唯一 >5% 墙钟杠杆）
 
+> **实施后记（2026-10-10，r22~r24）**：本层的前提经实测否定，动工前请先读 `docs/csharp-perf-report-r22.md` §1、`docs/csharp-perf-report-r23.md` §1 与 `docs/csharp-perf-report-r24.md`。三条实测：①本层认定的 42 MiB 独占分配是关系会话递归调度本体，不是 normalization/Simple/Weak（后三者合计 0.5 MB），且调度本体的自有分配只有 4.9 MB（0.59%）；②`TryEnsureSufficientExecutionStack` 在三个热点守卫处 874,660 次调用零让出，默认 1 MB 栈与 64 MB 专用栈结果相同，"大栈专用线程"这条前置对当前异步形态没有作用；③异步状态机实测**零分配**，每帧 async 税约 2 ns，await 1.30 ns（比同步等价 1.74 ns 更便宜）、guard 0.22 ns。据此"状态机分配消失 −100~200 MB"为 0，墙钟上界约 1~2%（按热帧调用计数 2,220,665 得 0.22%，外推 10M 次得 1.0%；方案 5% 需要约 4,900 万次异步调用，即热帧计数的 22 倍）。本层现在的处境与 Go/No-Go 见 r24 报告 §3。
+
 r19 已给预判，本轮用新数据细化：
 
 - **范围**：Checking 包 2,381 个 ValueTask 签名及其调用面；154 处 `TryEnsureSufficientExecutionStack + ForceYielding` 栈守卫。
