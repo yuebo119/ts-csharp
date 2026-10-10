@@ -83,6 +83,31 @@ internal sealed class CompilationCapture : IAsyncDisposable
 
     internal static void NoteRelationExit() => relationDepth--;
 
+    private static long stackGuardCalls, stackGuardYields;
+    internal static long StackGuardCalls => Volatile.Read(ref stackGuardCalls);
+    internal static long StackGuardYields => Volatile.Read(ref stackGuardYields);
+
+    /// <summary>
+    /// The runtime execution-stack guard used at the top of the recursive checking entry points.
+    /// Beyond its <see cref="ConfigureAwaitOptions"/> result it counts how often the guard forces a
+    /// real yield, which is what promotes the async state machines on this path to the heap: the
+    /// checker sync rewrite removes the need for the guard entirely, so the rate is the input R
+    /// needs to size the dedicated checker thread.
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal static ConfigureAwaitOptions StackGuard()
+    {
+        if (System.Runtime.CompilerServices.RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            if (ProbesEnabled)
+                Interlocked.Increment(ref stackGuardCalls);
+            return ConfigureAwaitOptions.None;
+        }
+        if (ProbesEnabled)
+            Interlocked.Increment(ref stackGuardYields);
+        return ConfigureAwaitOptions.ForceYielding;
+    }
+
     private void NoteProbe(int id, long bytes, long ticks, FrameNode? node)
     {
         if ((uint)id >= (uint)probeAllocations.Length)
@@ -311,6 +336,8 @@ internal sealed class CompilationCapture : IAsyncDisposable
             NodeDataCalls = Volatile.Read(ref nodeDataCalls), LinkCreates = Volatile.Read(ref linkCreates),
             MaxRelationDepth = MaxRelationDepth,
             MaxRelationStackBytes = MaxRelationStackBytes,
+            StackGuardCalls = StackGuardCalls,
+            StackGuardYields = StackGuardYields,
         };
     }
 

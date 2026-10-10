@@ -35,8 +35,7 @@ internal sealed class SymbolTypes(TypeContext context, CheckerLinks links, Check
 {
     internal async ValueTask<Type> GetAsync(Symbol symbol, CancellationToken cancellation = default)
     {
-        await Task.CompletedTask.ConfigureAwait(RuntimeHelpers.TryEnsureSufficientExecutionStack()
-            ? ConfigureAwaitOptions.None : ConfigureAwaitOptions.ForceYielding);
+        await Task.CompletedTask.ConfigureAwait(Diagnostics.CompilationCapture.StackGuard());
         cancellation.ThrowIfCancellationRequested();
         Diagnostics.CompilationCapture.ProbeMark symbolMark = Diagnostics.CompilationCapture.Mark();
         try

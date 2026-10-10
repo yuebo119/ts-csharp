@@ -73,8 +73,7 @@ internal sealed class StructuralRelations(TypeContext context, TypeAlgebra algeb
     internal async ValueTask<Ternary> RelatedAsync(RelationOperation operation, Type source, Type target, RecursionFlags recursion,
         IntersectionState intersection, CancellationToken cancellation = default)
     {
-        await Task.CompletedTask.ConfigureAwait(RuntimeHelpers.TryEnsureSufficientExecutionStack()
-            ? ConfigureAwaitOptions.None : ConfigureAwaitOptions.ForceYielding);
+        await Task.CompletedTask.ConfigureAwait(CompilationCapture.StackGuard());
         cancellation.ThrowIfCancellationRequested();
         if (source is TypeParameter && await constraints.ConstraintAsync(source, cancellation).ConfigureAwait(false) == target)
             return Ternary.True;

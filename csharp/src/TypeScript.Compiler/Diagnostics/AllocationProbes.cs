@@ -51,7 +51,10 @@ internal static class AllocationProbes
     internal const int RelRecurse = 35;
     // Relation-key construction, the remaining piece inside the recursive-session dispatch.
     internal const int RelKeys = 36;
-    internal const int Count = 37;
+    // Inside the recursive-session body: the deep-nesting check and the structured-comparison callback.
+    internal const int RecDeep = 37;
+    internal const int RecStamp = 38;
+    internal const int Count = 39;
 
     internal static readonly string[] Names =
     [
@@ -63,5 +66,6 @@ internal static class AllocationProbes
         "mutableConst", "mutableContextual", "mutableWiden",
         "ctxElement", "ctxProperties", "propertyLookup", "ctxApparent",
         "relNormalize", "relSimple", "relWeak", "relIdentical", "relUnion", "relRecurse", "relKeys",
+        "recDeep", "recStamp",
     ];
 }

@@ -47,6 +47,8 @@ internal sealed record CompilationStatistics
     internal long LinkCreates { get; init; }
     internal int MaxRelationDepth { get; init; }
     internal long MaxRelationStackBytes { get; init; }
+    internal long StackGuardCalls { get; init; }
+    internal long StackGuardYields { get; init; }
 
     internal void Report(TextWriter output, int? projects = null, int built = 0, int timestamps = 0)
     {
@@ -125,6 +127,8 @@ internal sealed record CompilationStatistics
             Count("LinkStore creates", LinkCreates);
             Count("Max relation depth", MaxRelationDepth);
             Count("Max relation stack bytes", MaxRelationStackBytes);
+            Count("Stack guard calls", StackGuardCalls);
+            Count("Stack guard yields", StackGuardYields);
         }
         if (PassDurations.Count != 0)
             foreach (var (name, seconds) in PassDurations.OrderByDescending(pass => pass.Value).Take(20))
