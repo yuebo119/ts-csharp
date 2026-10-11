@@ -78,6 +78,11 @@ internal sealed class TypeKeys(TypeContext context, TypeAlgebra algebra, TypeVie
     internal async ValueTask<bool> GenericReducibleAsync(Type type, CancellationToken cancellation = default)
     {
         context.RequireOwned(type);
+        // Only an intersection, or a union that contains intersections, can reduce: any other input
+        // pops a single element off the work list and returns false.
+        if (type is not IntersectionType
+            && (type is not UnionType container || (container.ObjectFlags & ObjectFlags.ContainsIntersections) == 0))
+            return false;
         var pending = new Stack<Type>();
         pending.Push(type);
         while (pending.TryPop(out var current))

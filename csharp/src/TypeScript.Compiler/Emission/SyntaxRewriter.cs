@@ -33,8 +33,10 @@ public abstract partial class SyntaxRewriter(EmitContext context, CancellationTo
         // Allocation attribution for the transform phase (diagnostics only): each visited node
         // reports its own share, i.e. the subtree total minus what its children already claimed.
         // This is the transform-side counterpart of the checker accounting and only runs while a
-        // capture is active, so the shipping path is untouched.
-        var capture = CompilationCapture.InTransformPhase ? CompilationCapture.Current : null;
+        // capture is active, so the shipping path is untouched; the static gate avoids reading the
+        // transform-depth AsyncLocal per node when no capture exists.
+        var capture = CompilationCapture.ProbesEnabled && CompilationCapture.InTransformPhase
+            ? CompilationCapture.Current : null;
         long allocationMark = capture is not null ? GC.GetTotalAllocatedBytes() : 0;
         if (capture is not null)
             Context.PushTransformAllocationFrame();

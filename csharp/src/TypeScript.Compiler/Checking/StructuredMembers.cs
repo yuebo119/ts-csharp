@@ -72,8 +72,9 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
                 case TypeReference reference when (type.ObjectFlags & O.Reference) != 0:
                     var source = (InterfaceType)reference.ReferencedType;
                     var arguments = await references.TypeArgumentsAsync(reference, cancellation).ConfigureAwait(false);
+                    // The appended array keeps the this-argument case on the mapper's span fast path.
                     await ObjectAsync(reference, source, source.AllTypeParameters,
-                        arguments.Count == source.AllTypeParameters.Count - 1 ? [.. arguments, reference] : arguments,
+                        arguments.Count == source.AllTypeParameters.Count - 1 ? (Type[])[.. arguments, reference] : arguments,
                         cancellation).ConfigureAwait(false);
                     break;
                 case InterfaceType intf:
@@ -164,7 +165,7 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         bool instantiated = parameters.Count != arguments.Count;
         for (int i = 0; !instantiated && i < parameters.Count; i++)
             instantiated = parameters[i] != arguments[i];
-        TypeMapper? mapper = instantiated ? TypeMapper.Create(parameters.ToArray(), arguments.ToArray()) : null;
+        TypeMapper? mapper = instantiated ? TypeMapper.Create(parameters, arguments) : null;
         // When the table is instantiated the dictionary built here is fresh and mutable, so the base
         // loop can inherit into it directly. Only a non-instantiated table needs the copy below.
         Dictionary<Utf8String, Symbol>? owned = null;

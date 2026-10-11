@@ -104,7 +104,7 @@ internal sealed class TupleTypes(TypeContext context, TypeAlgebra algebra, Check
         thisType.IsThisType = true;
         thisType.Constraint = tuple;
         tuple.ThisType = thisType;
-        tuple.AllTypeParameters = Array.AsReadOnly<Type>([.. parameters, thisType]);
+        tuple.AllTypeParameters = (Type[])[.. parameters, thisType];
         tuple.Instantiations = new() { [new TypeCacheKey(parameters)] = tuple };
         tuple.Target = tuple;
         tuple.ResolvedTypeArguments = Array.AsReadOnly<Type>(parameters);

@@ -107,8 +107,9 @@ internal sealed partial class Checker
         Instantiation.Engine.ResetExpressionCount();
         // Allocation attribution (diagnostics only): each frame reports what it allocated on its own,
         // i.e. its subtree total minus what the children below it already claimed. The stack is an
-        // instance field because a checker is leased to one file at a time by the pool.
-        var capture = CompilationCapture.Current;
+        // instance field because a checker is leased to one file at a time by the pool. The static
+        // gate keeps the per-node AsyncLocal read off the shipping path.
+        var capture = CompilationCapture.ProbesEnabled ? CompilationCapture.Current : null;
         long allocationMark = capture is not null ? GC.GetTotalAllocatedBytes() : 0;
         if (capture is not null)
             checkAllocationStack.Add(0);

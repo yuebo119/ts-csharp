@@ -31,6 +31,16 @@ internal sealed class Signatures(TypeContext context, CheckerLinks links, Checke
 {
     internal async ValueTask<Type> NonCircularReturnAsync(Signature signature, CancellationToken cancellation = default)
     {
+        // The common input is a plain signature with no composite parts: the work list below would
+        // hold exactly one element, so answer the cycle probe directly.
+        if (signature.Composite is null)
+        {
+            RequireOwned(signature);
+            return signature.ResolvedReturnType is null
+                && resolutions.FindCycleStart(signature, TypeSystemPropertyName.ResolvedReturnType) >= 0
+                ? context.AnyType
+                : await ReturnAsync(signature, cancellation).ConfigureAwait(false);
+        }
         var pending = new Stack<Signature>();
         pending.Push(signature);
         while (pending.TryPop(out var current))

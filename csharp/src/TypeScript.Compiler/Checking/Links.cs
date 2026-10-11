@@ -23,7 +23,7 @@ internal sealed class LinkStore<TKey, TValue> where TKey : class where TValue : 
         ref var value = ref CollectionsMarshal.GetValueRefOrAddDefault(values, key, out _);
         if (value is null)
         {
-            Diagnostics.CompilationCapture.Current?.NoteLinkCreate();
+            Diagnostics.CompilationCapture.CountLinkCreate();
             value = new();
         }
         return value;

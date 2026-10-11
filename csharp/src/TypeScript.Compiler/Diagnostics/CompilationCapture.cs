@@ -129,6 +129,14 @@ internal sealed class CompilationCapture : IAsyncDisposable
     internal void NoteNodeData() => Interlocked.Increment(ref nodeDataCalls);
     internal void NoteLinkCreate() => Interlocked.Increment(ref linkCreates);
 
+    // Counter call sites fire per node, link and comment on hot paths, so they gate on the static
+    // flag first: a normal compile never reads the AsyncLocal current. The ProbesEnabled check is
+    // equivalent because no active capture anywhere means Current is null in every context.
+    internal static void CountLinkCreate() { if (ProbesEnabled) Current?.NoteLinkCreate(); }
+    internal static void CountNodeData() { if (ProbesEnabled) Current?.NoteNodeData(); }
+    internal static void CountCommentAdd() { if (ProbesEnabled) Current?.NoteCommentAdd(); }
+    internal static void CountCommentSet() { if (ProbesEnabled) Current?.NoteCommentSet(); }
+
     private static int activeCaptures;
 
     /// <summary>
@@ -334,6 +342,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
             ProbeDurations = (long[])probeDurations.Clone(),
             CommentAdds = Volatile.Read(ref commentAdds), CommentSets = Volatile.Read(ref commentSets),
             NodeDataCalls = Volatile.Read(ref nodeDataCalls), LinkCreates = Volatile.Read(ref linkCreates),
+            GCPauseTime = GC.GetTotalPauseDuration().TotalSeconds,
             MaxRelationDepth = MaxRelationDepth,
             MaxRelationStackBytes = MaxRelationStackBytes,
             StackGuardCalls = StackGuardCalls,

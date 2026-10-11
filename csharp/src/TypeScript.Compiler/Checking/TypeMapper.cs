@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace TypeScript.Compiler.Checking;
 
@@ -108,6 +109,19 @@ internal abstract class TypeMapper
     {
         Validate(sources, targets);
         return sources.Length == 1 ? new Simple(sources[0], targets[0]) : new Direct(sources.ToArray(), targets.ToArray());
+    }
+
+    // Callers hold IReadOnlyList inputs (type-parameter lists, resolved type arguments); converting
+    // them to spans at the call site copied both lists for the conversion alone, and the single-
+    // parameter Simple case then allocated nothing internally. Arrays and lists lend a span without
+    // copying; anything else falls back to the copy the span overload needs.
+    internal static TypeMapper Create(IReadOnlyList<Type> sources, IReadOnlyList<Type> targets)
+    {
+        if (sources is Type[] sourceArray && targets is Type[] targetArray)
+            return Create(sourceArray.AsSpan(), targetArray.AsSpan());
+        if (sources is List<Type> sourceList && targets is List<Type> targetList)
+            return Create(CollectionsMarshal.AsSpan(sourceList), CollectionsMarshal.AsSpan(targetList));
+        return Create(sources.ToArray(), targets.ToArray());
     }
 
     internal static TypeMapper ToSingle(ReadOnlySpan<Type> sources, Type target)

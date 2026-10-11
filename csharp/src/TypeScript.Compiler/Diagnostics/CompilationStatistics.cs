@@ -49,6 +49,10 @@ internal sealed record CompilationStatistics
     internal long MaxRelationStackBytes { get; init; }
     internal long StackGuardCalls { get; init; }
     internal long StackGuardYields { get; init; }
+    /// <summary>Total stop-the-world pause time the GC accumulated in this process so far. Read at
+    /// statistics time, so a single-project CLI run reports the whole process; an aggregate takes the
+    /// maximum because the counter is process-wide and per-project snapshots overlap.</summary>
+    internal double GCPauseTime { get; init; }
 
     internal void Report(TextWriter output, int? projects = null, int built = 0, int timestamps = 0)
     {
@@ -68,6 +72,7 @@ internal sealed record CompilationStatistics
         Time("Config time", ConfigTime); Time("Program time", ProgramTime);
         Time("Parse time (summed)", ParseTime); Time("Bind time (summed)", BindTime); Time("Check time (summed)", CheckTime);
         Time("Emit time (summed)", EmitTime); Time("Transform time (summed)", TransformTime); Time("Print time (summed)", PrintTime); Time("BuildInfo read time", BuildInfoTime); Time("Changes compute time", ChangesTime); Time("Total time", TotalTime);
+        Time("GC pause time (process)", GCPauseTime);
         Count("Alloc program (summed)", AllocatedProgram); Count("Alloc parse (summed)", AllocatedParse); Count("Alloc bind (summed)", AllocatedBind);
         Count("Alloc check (summed)", AllocatedCheck); Count("Alloc emit (summed)", AllocatedEmit);
         Count("Alloc transform (summed)", AllocatedTransform); Count("Alloc print (summed)", AllocatedPrint);
@@ -152,6 +157,7 @@ internal sealed record CompilationStatistics
             AllocatedProgram = entries.Sum(value => value.AllocatedProgram), AllocatedParse = entries.Sum(value => value.AllocatedParse),
             AllocatedBind = entries.Sum(value => value.AllocatedBind), AllocatedCheck = entries.Sum(value => value.AllocatedCheck),
             AllocatedEmit = entries.Sum(value => value.AllocatedEmit),
+            GCPauseTime = entries.Length == 0 ? 0 : entries.Max(value => value.GCPauseTime),
         };
     }
 }

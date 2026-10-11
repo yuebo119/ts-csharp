@@ -54,7 +54,7 @@ public sealed partial class EmitContext
     {
         if (!nodes.TryGetValue(node, out var data))
         {
-            Diagnostics.CompilationCapture.Current?.NoteNodeData();
+            Diagnostics.CompilationCapture.CountNodeData();
             nodes.Add(node, data = new());
         }
         return data;
@@ -147,28 +147,28 @@ public sealed partial class EmitContext
     public void AddLeadingComment(SyntaxNode node, SyntheticComment comment)
     {
         Interlocked.Increment(ref commentCount);
-        Diagnostics.CompilationCapture.Current?.NoteCommentAdd();
+        Diagnostics.CompilationCapture.CountCommentAdd();
         (Data(node).LeadingComments ??= []).Add(comment);
     }
 
     public void AddTrailingComment(SyntaxNode node, SyntheticComment comment)
     {
         Interlocked.Increment(ref commentCount);
-        Diagnostics.CompilationCapture.Current?.NoteCommentAdd();
+        Diagnostics.CompilationCapture.CountCommentAdd();
         (Data(node).TrailingComments ??= []).Add(comment);
     }
 
     public void SetLeadingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments)
     {
         Interlocked.Increment(ref commentCount);
-        Diagnostics.CompilationCapture.Current?.NoteCommentSet();
+        Diagnostics.CompilationCapture.CountCommentSet();
         Data(node).LeadingComments = [.. comments];
     }
 
     public void SetTrailingComments(SyntaxNode node, IEnumerable<SyntheticComment> comments)
     {
         Interlocked.Increment(ref commentCount);
-        Diagnostics.CompilationCapture.Current?.NoteCommentSet();
+        Diagnostics.CompilationCapture.CountCommentSet();
         Data(node).TrailingComments = [.. comments];
     }
 
