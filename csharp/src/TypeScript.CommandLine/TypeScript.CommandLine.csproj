@@ -37,4 +37,13 @@
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="true" />
   </ItemGroup>
+  <!--
+    r31 experiment plumbing: bakes System.GC.HeapCount (server GC heap/thread count) only when
+    -p:GCHeapCount=<n> is passed at publish time; the default build is byte-for-byte unaffected.
+    The workload runs 8 checkers on a 16-core host, so the default heap count equals the core
+    count and is likely oversized - see docs/csharp-perf-plan-r31.md.
+  -->
+  <ItemGroup Condition="'$(GCHeapCount)' != ''">
+    <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="$(GCHeapCount)" />
+  </ItemGroup>
 </Project>
