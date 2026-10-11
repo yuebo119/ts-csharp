@@ -81,7 +81,10 @@ public sealed partial class IncrementalProgram
                 int workers = 1;
                 if (requested != 1 && work.Count > 1 && Options.SingleThreaded != true)
                 {
-                    pool = await Program.CreateCheckerPoolAsync(false, cancellation).ConfigureAwait(false);
+                    // Reuse the diagnostics-phase pool: its per-checker link stores are warm for
+                    // exactly these files, matching the reference implementation's per-file
+                    // GetTypeCheckerForFile borrow. A fresh pool re-created that state from scratch.
+                    pool = checkerPool ??= await Program.CreateCheckerPoolAsync(false, cancellation).ConfigureAwait(false);
                     workers = Math.Max(1, Math.Min(requested > 1 ? requested : pool.Count, work.Count));
                 }
                 if (workers > 1)
@@ -107,12 +110,22 @@ public sealed partial class IncrementalProgram
                         var (file, _, pending) = work[index];
                         bool javascript = (pending & FileEmitKind.AllJavaScript) != 0;
                         bool declarations = (pending & FileEmitKind.AllDeclarations) != 0;
-                        emitChecker ??= await Program.CreateCheckerAsync(cancellation).ConfigureAwait(false);
-                        results[index] = await Program.EmitWithCheckerAsync(new()
+                        EmitOptions fileOptions = new()
                         {
                             SourceFiles = [file.Syntax], WriteFile = Write, PipelineDeclarationTransform = true,
                             Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations
-                        }, emitChecker, cancellation).ConfigureAwait(false);
+                        };
+                        if (checkerPool is { } cached)
+                        {
+                            // Borrow the checker that checked this file; see the concurrent branch.
+                            using var lease = await cached.AcquireAsync(file.Syntax, cancellation).ConfigureAwait(false);
+                            results[index] = await Program.EmitWithCheckerAsync(fileOptions, lease.Checker, cancellation).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            emitChecker ??= await Program.CreateCheckerAsync(cancellation).ConfigureAwait(false);
+                            results[index] = await Program.EmitWithCheckerAsync(fileOptions, emitChecker, cancellation).ConfigureAwait(false);
+                        }
                     }
                 }
                 for (int index = 0; index < work.Count; index++)

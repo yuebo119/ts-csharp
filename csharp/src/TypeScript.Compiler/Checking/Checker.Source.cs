@@ -53,13 +53,20 @@ internal sealed partial class Checker
             if (deferredSourceNodes.TryGetValue(file, out var deferred))
                 for (int i = 0; i < deferred.Count; i++)
                     await CheckDeferredSourceAsync(deferred[i], cancellation).ConfigureAwait(false);
-            foreach (var diagnostic in DeferredIterationDiagnostics.Where(d => SemanticSyntax.Source(d.Node) == file).ToArray())
-                await Iteration.NotIterableAsync(
-                    diagnostic.Node,
-                    diagnostic.Type,
-                    diagnostic.Async,
-                    cancellation,
-                    diagnostic.Related).ConfigureAwait(false);
+            if (deferredIterationsByFile.TryGetValue(file, out var iterations))
+            {
+                deferredIterationsByFile.Remove(file);
+                for (int i = 0; i < iterations.Count; i++)
+                {
+                    var diagnostic = iterations[i];
+                    await Iteration.NotIterableAsync(
+                        diagnostic.Node,
+                        diagnostic.Type,
+                        diagnostic.Async,
+                        cancellation,
+                        diagnostic.Related).ConfigureAwait(false);
+                }
+            }
             await CheckMissingPropertiesAsync(file, cancellation).ConfigureAwait(false);
             CheckDeferredDeclarationNames(file, cancellation);
             if (program.Symbols.Binding(file)?.IsModule == true)
@@ -74,7 +81,7 @@ internal sealed partial class Checker
                 foreach (var node in deferred)
                     DeferredExpressions.Remove(node);
             deferredSourceNodes.Remove(file);
-            DeferredIterationDiagnostics.RemoveAll(d => SemanticSyntax.Source(d.Node) == file);
+            deferredIterationsByFile.Remove(file);
             reportedUnreachable.Clear();
         }
         catch (OperationCanceledException)

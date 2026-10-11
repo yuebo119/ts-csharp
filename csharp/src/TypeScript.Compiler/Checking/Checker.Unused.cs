@@ -12,32 +12,32 @@ internal sealed partial class Checker
     {
         if (file.IsDeclarationFile)
             return;
-        foreach (var renamed in RenamedBindingElements)
-            if (SemanticSyntax.Source(renamed) == file && program.Symbols.ReferenceKinds(program.Symbols.Declaration(renamed)!) == 0)
+        if (renamedBindingElementsByFile.TryGetValue(file, out var renamedElements))
+            foreach (var renamed in renamedElements)
+                if (program.Symbols.ReferenceKinds(program.Symbols.Declaration(renamed)!) == 0)
+                {
+                    Utf8String name = CheckerDiagnostic.DeclarationName(renamed.Name!);
+                    Utf8String property = CheckerDiagnostic.DeclarationName(renamed.PropertyName!);
+                    var diagnostic = CheckerDiagnostic.Create(
+                        renamed.Name!,
+                        Messages.X_0_is_an_unused_renaming_of_1_Did_you_intend_to_use_it_as_a_type_annotation,
+                        name, property);
+                    var parameter = SemanticSyntax.RootDeclaration(renamed);
+                    if (parameter is ITypedNode { Type: null })
+                        diagnostic = diagnostic with
+                        {
+                            RelatedInformation = [new Diagnostic(
+                                Messages.We_can_only_write_a_type_for_0_by_adding_a_type_for_the_entire_parameter_here,
+                                parameter.End, 0, [property]) { FileName = file.FileName }]
+                        };
+                    Error(renamed.Name!, diagnostic);
+                }
+        if (unusedIdentifierScopesByFile.TryGetValue(file, out var scopes))
+            foreach (var node in scopes)
             {
-                Utf8String name = CheckerDiagnostic.DeclarationName(renamed.Name!);
-                Utf8String property = CheckerDiagnostic.DeclarationName(renamed.PropertyName!);
-                var diagnostic = CheckerDiagnostic.Create(
-                    renamed.Name!,
-                    Messages.X_0_is_an_unused_renaming_of_1_Did_you_intend_to_use_it_as_a_type_annotation,
-                    name, property);
-                var parameter = SemanticSyntax.RootDeclaration(renamed);
-                if (parameter is ITypedNode { Type: null })
-                    diagnostic = diagnostic with
-                    {
-                        RelatedInformation = [new Diagnostic(
-                            Messages.We_can_only_write_a_type_for_0_by_adding_a_type_for_the_entire_parameter_here,
-                            parameter.End, 0, [property]) { FileName = file.FileName }]
-                    };
-                Error(renamed.Name!, diagnostic);
-            }
-        foreach (var node in UnusedIdentifierScopes)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            if (program.Symbols.Binding(node)?.SourceFile != file)
-                continue;
-            switch (node)
-            {
+                cancellation.ThrowIfCancellationRequested();
+                switch (node)
+                {
                 case ClassDeclarationNode or ClassExpressionNode:
                     CheckUnusedClass(node);
                     CheckUnusedTypeParameters(node);

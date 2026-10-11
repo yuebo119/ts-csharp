@@ -34,7 +34,12 @@ internal sealed partial class Checker : IAccessExpressionHost, IIndexedAccessVal
         Error(node, diagnostic);
     }
 
-    internal List<(SyntaxNode Node, Type Type, bool Suggestion)> DeferredMissingProperties { get; } = [];
+    // Bucketed per source file at registration; the per-file tail (CheckMissingPropertiesAsync)
+    // consumes and removes its own bucket instead of scanning one checker-global list per file.
+    private readonly Dictionary<SourceFileNode, List<(SyntaxNode Node, Type Type, bool Suggestion)>> missingPropertiesByFile = [];
+
+    internal IReadOnlyList<(SyntaxNode Node, Type Type, bool Suggestion)> DeferredMissingProperties
+        => missingPropertiesByFile.SelectMany(pair => pair.Value).ToArray();
     public bool StrictPropertyInitialization => program.Symbols.Program.Configuration.Options.EffectiveStrictPropertyInitialization;
     public bool NoPropertyAccessFromIndexSignature =>
         program.Symbols.Program.Configuration.Options.NoPropertyAccessFromIndexSignature == true;
@@ -115,7 +120,15 @@ internal sealed partial class Checker : IAccessExpressionHost, IIndexedAccessVal
         return true;
     }
 
-    public void MissingProperty(SyntaxNode node, Type type, bool suggestion) => DeferredMissingProperties.Add((node, type, suggestion));
+    public void MissingProperty(SyntaxNode node, Type type, bool suggestion)
+    {
+        var file = SemanticSyntax.Source(node);
+        if (file is null)
+            return;
+        if (!missingPropertiesByFile.TryGetValue(file, out var bucket))
+            missingPropertiesByFile.Add(file, bucket = []);
+        bucket.Add((node, type, suggestion));
+    }
 
     public async ValueTask PropertyDeprecatedAsync(Symbol property, SyntaxNode node, SyntaxNode errorNode, CancellationToken cancellation)
     {

@@ -14,7 +14,13 @@ internal sealed partial class Checker : IIteratorProtocolHost, IIterationElement
     internal YieldExpressions Yields { get; }
     internal Action<Utf8String>? BeforeIterationGlobal { get; set; }
     private readonly Dictionary<(Utf8String Name, int Arity, bool Report), Type> iterationGlobals = [];
-    internal List<(SyntaxNode Node, Type Type, bool Async, IReadOnlyList<IterationDiagnostic> Related)> DeferredIterationDiagnostics { get; } = [];
+    // Bucketed per source file at registration: the per-file tail consumes and clears its own
+    // bucket, matching the reference implementation's per-file callback list instead of scanning a
+    // checker-global list (with a closure) for every file.
+    private readonly Dictionary<SourceFileNode, List<(SyntaxNode Node, Type Type, bool Async, IReadOnlyList<IterationDiagnostic> Related)>> deferredIterationsByFile = [];
+
+    internal IEnumerable<(SyntaxNode Node, Type Type, bool Async, IReadOnlyList<IterationDiagnostic> Related)> DeferredIterationDiagnostics
+        => deferredIterationsByFile.SelectMany(pair => pair.Value);
     internal List<(SyntaxNode Node, DiagnosticCode Code)> IterationAwaitHints { get; } = [];
 
     public bool StrictBuiltinIteratorReturn => program.Symbols.Program.Configuration.Options.EffectiveStrictBuiltinIteratorReturn;
@@ -92,8 +98,15 @@ internal sealed partial class Checker : IIteratorProtocolHost, IIterationElement
                 ? ExternalHelpersAsync(node, [Utf8Literals.Await, Utf8Literals.AsyncDelegator, Utf8Literals.AsyncValues], cancellation)
                 : ValueTask.CompletedTask;
 
-    public void DeferIteratorDiagnostic(SyntaxNode node, Type type, bool async, IReadOnlyList<IterationDiagnostic> related) =>
-        DeferredIterationDiagnostics.Add((node, type, async, related));
+    public void DeferIteratorDiagnostic(SyntaxNode node, Type type, bool async, IReadOnlyList<IterationDiagnostic> related)
+    {
+        var file = SemanticSyntax.Source(node);
+        if (file is null)
+            return;
+        if (!deferredIterationsByFile.TryGetValue(file, out var bucket))
+            deferredIterationsByFile.Add(file, bucket = []);
+        bucket.Add((node, type, async, related));
+    }
 
     public async ValueTask IterationErrorAsync(SyntaxNode node, DiagnosticCode code, bool missingAwait, Type type, Type? other,
         CancellationToken cancellation, IReadOnlyList<IterationDiagnostic>? related = null)

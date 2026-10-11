@@ -174,8 +174,21 @@ internal sealed partial class Checker : IFunctionContextHost, IFunctionBodyHost,
         return invalid;
     }
 
-    internal HashSet<SyntaxNode> UnusedIdentifierScopes { get; } = [];
-    internal List<BindingElementNode> RenamedBindingElements { get; } = [];
+    // Bucketed per source file at registration, matching the reference implementation's per-file
+    // unused-check nodes (source-file links): the per-file tail reads only its own bucket instead
+    // of scanning one checker-global set for every file.
+    private readonly Dictionary<SourceFileNode, HashSet<SyntaxNode>> unusedIdentifierScopesByFile = [];
+    private readonly Dictionary<SourceFileNode, List<BindingElementNode>> renamedBindingElementsByFile = [];
+
+    private void NoteRenamedBindingElement(BindingElementNode node)
+    {
+        var file = SemanticSyntax.Source(node);
+        if (file is null)
+            return;
+        if (!renamedBindingElementsByFile.TryGetValue(file, out var renamed))
+            renamedBindingElementsByFile.Add(file, renamed = []);
+        renamed.Add(node);
+    }
     internal Action<SyntaxNode>? BeforeFunctionDeclaration { get; set; }
     public Type AnyReadonlyArray => program.Globals.AnyReadonlyArrayType!;
 
@@ -325,7 +338,15 @@ internal sealed partial class Checker : IFunctionContextHost, IFunctionBodyHost,
             Error(star, DiagnosticCode.AnOverloadSignatureCannotBeDeclaredAsAGenerator);
     }
 
-    public void RegisterUnused(SyntaxNode node) => UnusedIdentifierScopes.Add(node);
+    public void RegisterUnused(SyntaxNode node)
+    {
+        var file = program.Symbols.Binding(node)?.SourceFile;
+        if (file is null)
+            return;
+        if (!unusedIdentifierScopesByFile.TryGetValue(file, out var scopes))
+            unusedIdentifierScopesByFile.Add(file, scopes = []);
+        scopes.Add(node);
+    }
 
     public ValueTask FunctionNameAsync(SyntaxNode node, CancellationToken cancellation)
     {
@@ -434,7 +455,7 @@ internal sealed partial class Checker : IFunctionContextHost, IFunctionBodyHost,
             && SemanticSyntax.RootDeclaration(node) is ParameterDeclarationNode
             && SemanticSyntax.Body(SemanticSyntax.RootDeclaration(node).Parent!) is null)
         {
-            RenamedBindingElements.Add(node);
+            NoteRenamedBindingElement(node);
             return true;
         }
         if (node.DotDotDotToken is not null && node.Parent!.Kind == SyntaxKind.ObjectBindingPattern && TargetYear < 2018)

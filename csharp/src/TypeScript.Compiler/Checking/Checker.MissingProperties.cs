@@ -75,11 +75,13 @@ internal sealed partial class Checker
 
     private async ValueTask CheckMissingPropertiesAsync(SourceFileNode file, CancellationToken cancellation)
     {
-        for (int i = 0; i < DeferredMissingProperties.Count; i++)
+        if (!missingPropertiesByFile.TryGetValue(file, out var deferred))
+            return;
+        for (int i = 0; i < deferred.Count; i++)
         {
-            var (node, type, suggestion) = DeferredMissingProperties[i];
+            var (node, type, suggestion) = deferred[i];
             cancellation.ThrowIfCancellationRequested();
-            if (SemanticSyntax.Source(node) != file || (links.Nodes.Get(node).Flags & NodeCheckFlags.TypeChecked) != 0)
+            if ((links.Nodes.Get(node).Flags & NodeCheckFlags.TypeChecked) != 0)
                 continue;
             links.Nodes.Get(node).Flags |= NodeCheckFlags.TypeChecked;
             Utf8String name = SyntaxNameText.Get(node);
@@ -190,7 +192,7 @@ internal sealed partial class Checker
             else
                 Error(node, diagnostic);
         }
-        DeferredMissingProperties.RemoveAll(d => SemanticSyntax.Source(d.Node) == file);
+        missingPropertiesByFile.Remove(file);
     }
 
     private async ValueTask<bool> EmptyDomTypeAsync(Type type, CancellationToken cancellation)
