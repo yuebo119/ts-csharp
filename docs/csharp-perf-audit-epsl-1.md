@@ -27,7 +27,7 @@
 | Stack guard yields | 0 | 0（4 组一致，与 ledger 表3 大栈否决互证） | 绿 |
 | GC 停顿（真实工程） | 参考项（无预算线） | 0.190~0.210 s（r27d 锚 0.206） | 观察项 |
 | 墙钟预算四线（vs Go 默认） | 见 §2 | 四线全过（x1.428 / x2.009 / x1.425 / x1.298） | 绿 |
-| 复杂度阶梯测试 | budgets §3 待建 | 不存在（L1 缺口，C 批移交） | 缺口 |
+| 复杂度阶梯测试 | budgets §3 待建 | 不存在（L1 缺口；同日修复轮闭环，见 §8） | 缺口→闭环 |
 
 ## 2. 墙钟预算四线（AB123）
 
@@ -85,6 +85,15 @@ A 批变异探针状态：两条规则在接入轮已做过注入验证（CA1860
 
 - 明细数据：`/tmp/epsl-a1-build.log`、`/tmp/epsl-safety.log`、`/tmp/epsl-alloc.log`、`bench/AB123-epsl-a1-vs-go-default/summary.json`
 - 基线状态：r28 产品（`pkgs/r28`）与固定节点 `pkgs/go-v1`/`naot-svr` 未动；epsl-a1 产品与 `manifests/epsl-a1.json` 新增（tsbench 工作区，不入库）。
+
+## 8. 勘误与同日修复轮闭环（2026-10-11 晚，用户指令"根据报告全面修复"）
+
+| 项 | 原判定 | 闭环结果 |
+| --- | --- | --- |
+| 复杂度阶梯测试 | L1 缺口 | 已建：`--parser-ladder`（Compatibility 工程，三档 1k/10k/100k 语句，时间带宽 [4,26]、分配带宽 [8,12]）；首轮实测时间比 6.2×/6.9×、分配比 10.12×/9.95×（线性）；`--parser-ladder-probe` 以合成二次方比率验证门禁能红（按设计 exit 1）✓ |
+| CA1851/CA1861 变异探针 | 未单独注入 | 已补做：注入双违例探针文件，CA1851×2 + CA1861×1 全部红 ✓（探针即删） |
+| LSP 运行时覆盖 | 误记为"未验证" | 勘误：两处修复路径均有直接运行时覆盖——`SessionTelemetry.ProjectInfo` 由 `--telemetry-safety`（TelemetryTests.cs:32）、`LspJson.CompletionOptions` 由 `--syntax-services-safety`（SyntaxServiceTests.cs:204-210）执行，两者都在本轮 90 通过集合内 ✓ |
+| 三方表剩余两臂 / r31 | B/C 批移交 | 见 r31 轮文档与本轮对比表（修复轮执行） |
 
 ### 进度追踪
 

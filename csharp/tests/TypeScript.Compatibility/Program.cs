@@ -773,6 +773,18 @@ internal static class Program
                 ParserSafetyTests.Run();
                 return 0;
             }
+            if (args.Length == 1 && args[0] == "--parser-ladder"u8)
+            {
+                ParserLadderTests.Run(probe: false);
+                return 0;
+            }
+            if (args.Length == 1 && args[0] == "--parser-ladder-probe"u8)
+            {
+                // The probe passes by exiting 1: it feeds the band check a synthetic
+                // quadratic ratio and must be rejected. Exit 0 here means the gate cannot fail.
+                ParserLadderTests.Run(probe: true);
+                return 0;
+            }
             if (args is [_, var repository] && args[0] == "--foundations"u8)
             {
                 FoundationTests.Run(repository);
