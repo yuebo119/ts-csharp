@@ -352,6 +352,29 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         }
     }
 
+    // SetCoreAsync builds its declared/inherited split into two lists per member table. Alias
+    // resolution can re-enter member lookup while one pair is live (the NamedAsync test resolves
+    // aliases), so pairs rent from a LIFO stack instead of living as one shared scratch pair; a
+    // nested call rents a different pair and returns it first. Clear on rent, not on return, so an
+    // abandoned (exception-unwound) pair self-heals.
+    private Stack<(List<Symbol> Declared, List<Symbol> Inherited)>? availableLists;
+
+    private (List<Symbol> Declared, List<Symbol> Inherited) RentLists(int capacity)
+    {
+        if (availableLists is { Count: > 0 } pool && pool.TryPop(out var pair))
+        {
+            pair.Declared.Clear();
+            pair.Inherited.Clear();
+            return pair;
+        }
+        return (new List<Symbol>(capacity), new List<Symbol>(capacity));
+    }
+
+    private void ReturnLists((List<Symbol> Declared, List<Symbol> Inherited) pair)
+    {
+        (availableLists ??= []).Push(pair);
+    }
+
     private async ValueTask SetCoreAsync(StructuredType type, IReadOnlyDictionary<Utf8String, Symbol>? members, IReadOnlyList<Signature> calls,
         IReadOnlyList<Signature> constructors, IReadOnlyList<IndexInfo> indexes, CancellationToken cancellation = default)
     {
@@ -361,32 +384,38 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         // ResolveAsync restores this provisional state if resolution fails.
         type.Members = members;
         type.ObjectFlags |= O.MembersResolved;
-        var declared = new List<Symbol>(members?.Count ?? 0);
-        var inherited = new List<Symbol>(members?.Count ?? 0);
-        if (members is not null)
-            foreach (var (name, symbol) in members)
-            {
-                if (!await NamedAsync(name, symbol, cancellation).ConfigureAwait(false))
-                    continue;
-                if (type.Symbol is { } owner && (owner.Flags & (S.Class | S.Interface)) != 0 && symbol.ValueDeclaration is { } value
-                    && DeclaredIn(owner, value))
-                    declared.Add(symbol);
-                else
-                    inherited.Add(symbol);
-            }
-        // TypeOrder implements IComparer<Symbol>: sorting through the interface avoids the delegate
-        // (and the Comparer wrapper the delegate overload builds) that List.Sort(method group) would
-        // allocate on every member table.
-        declared.Sort(order);
-        inherited.Sort(order);
-        cancellation.ThrowIfCancellationRequested();
-        var properties = new Symbol[declared.Count + inherited.Count];
-        declared.CopyTo(properties, 0);
-        inherited.CopyTo(properties, declared.Count);
-        type.Properties = properties;
-        type.CallSignatures = calls;
-        type.ConstructSignatures = constructors;
-        type.IndexInfos = indexes;
+        var (declared, inherited) = RentLists(members?.Count ?? 0);
+        try
+        {
+            if (members is not null)
+                foreach (var (name, symbol) in members)
+                {
+                    if (!await NamedAsync(name, symbol, cancellation).ConfigureAwait(false))
+                        continue;
+                    if (type.Symbol is { } owner && (owner.Flags & (S.Class | S.Interface)) != 0 && symbol.ValueDeclaration is { } value
+                        && DeclaredIn(owner, value))
+                        declared.Add(symbol);
+                    else
+                        inherited.Add(symbol);
+                }
+            // TypeOrder implements IComparer<Symbol>: sorting through the interface avoids the delegate
+            // (and the Comparer wrapper the delegate overload builds) that List.Sort(method group) would
+            // allocate on every member table.
+            declared.Sort(order);
+            inherited.Sort(order);
+            cancellation.ThrowIfCancellationRequested();
+            var properties = new Symbol[declared.Count + inherited.Count];
+            declared.CopyTo(properties, 0);
+            inherited.CopyTo(properties, declared.Count);
+            type.Properties = properties;
+            type.CallSignatures = calls;
+            type.ConstructSignatures = constructors;
+            type.IndexInfos = indexes;
+        }
+        finally
+        {
+            ReturnLists((declared, inherited));
+        }
     }
 
     // Positional containment test for one member against its owner's declarations. Written as a loop

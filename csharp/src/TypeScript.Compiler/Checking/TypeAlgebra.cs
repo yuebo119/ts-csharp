@@ -463,14 +463,25 @@ internal sealed partial class TypeAlgebra(TypeContext context, TypeOrder order, 
         context.RequireOwned(type);
         if (type is not UnionType union)
             return (type.Flags & F.Never) != 0 || predicate(type) ? type : context.NeverType;
-        var filtered = union.Types.Where(predicate).ToArray();
-        if (filtered.Length == union.Types.Count)
+        // Two passes (count, then fill) instead of Where/ToArray: the predicate runs twice per part,
+        // which is safe because it must be pure — the single call site tests flags only.
+        var types = union.Types;
+        int count = 0;
+        for (int i = 0; i < types.Count; i++)
+            if (predicate(types[i]))
+                count++;
+        if (count == types.Count)
             return type;
+        var filtered = new Type[count];
+        int index = 0;
+        for (int i = 0; i < types.Count; i++)
+            if (predicate(types[i]))
+                filtered[index++] = types[i];
         Type? origin = null;
         if (union.Origin is UnionType oldOrigin)
         {
             var originTypes = oldOrigin.Types.Where(t => t is UnionType || predicate(t)).ToArray();
-            if (oldOrigin.Types.Count - originTypes.Length == union.Types.Count - filtered.Length)
+            if (oldOrigin.Types.Count - originTypes.Length == types.Count - filtered.Length)
             {
                 if (originTypes.Length == 1)
                     return originTypes[0];
