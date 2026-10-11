@@ -9,7 +9,7 @@ internal static partial class LspJson
     internal static CompletionCapabilities CompletionOptions(JsonElement capabilities)
     {
         var item = Get(Get(Get(capabilities, "textDocument"u8), "completion"u8), "completionItem"u8);
-        var defaults = Array(Get(Get(Get(Get(capabilities, "textDocument"u8), "completion"u8), "completionList"u8), "itemDefaults"u8));
+        var defaults = Array(Get(Get(Get(Get(capabilities, "textDocument"u8), "completion"u8), "completionList"u8), "itemDefaults"u8)).ToArray();
         return new(Boolean(item, "snippetSupport"u8), Boolean(item, "commitCharactersSupport"u8), Boolean(item, "insertReplaceSupport"u8),
             defaults.Any(value => value.ValueKind == JsonValueKind.String && value.GetString() == "commitCharacters"),
             defaults.Any(value => value.ValueKind == JsonValueKind.String && value.GetString() == "editRange"),

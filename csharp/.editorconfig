@@ -33,9 +33,9 @@ dotnet_diagnostic.CA1854.severity = error    # TryGetValue 替代 ContainsKey + 
 dotnet_diagnostic.CA1862.severity = error    # 大小写不敏感比较用 StringComparison 重载（不用 ToLower/ToUpper）
 # LINQ 分配族
 dotnet_diagnostic.CA1860.severity = error    # 判空用 Count/Length/IsEmpty 替代 Any()
+dotnet_diagnostic.CA1851.severity = error    # IEnumerable 多次枚举（2026-10-11 审计 A 批清理 2 处后启用）
+dotnet_diagnostic.CA1861.severity = error    # 常量数组参数提 static readonly（2026-10-11 审计 A 批清理 1 处后启用）
 # async / 可靠性
-# 以下 4 条 2026-10-11 存量清点有违例，暂不启用（清理后升 error，SOP 见段首注释）：
+# 以下 2 条 2026-10-11 存量清点有违例，暂不启用（清理后升 error，SOP 见段首注释）：
 # dotnet_diagnostic.CA1849.severity = error  # async 方法内优先调异步版本（42 处：checker 双轨 sync/async API 的既有形态，触碰关系调用链须先过隔离巨文件批次，r27 教训）
 # dotnet_diagnostic.CA2012.severity = error   # ValueTask 恰好消费一次（15 处：同上，双轨 API 直接取结果的既有形态）
-# dotnet_diagnostic.CA1851.severity = error   # IEnumerable 多次枚举（2 处：src/TypeScript.Compiler/LanguageServer/LspJson.Completions.cs:14-15）
-# dotnet_diagnostic.CA1861.severity = error   # 常量数组参数（1 处：src/TypeScript.Compiler/LanguageServer/SessionTelemetry.cs:129）

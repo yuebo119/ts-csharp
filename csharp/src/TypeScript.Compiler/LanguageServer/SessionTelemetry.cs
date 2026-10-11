@@ -21,6 +21,7 @@ internal sealed class SessionTelemetry : IAsyncDisposable
     private readonly Task publisher, sampler;
     private Task? disposal;
     internal static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
+    private static readonly string[] RawConfigurationProperties = ["extends", "files", "include", "exclude"];
 
     internal SessionTelemetry(Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> send,
         Func<ValueTask<RpcResponse?>> collect, TimeProvider timeProvider, CancellationToken cancellation)
@@ -126,7 +127,7 @@ internal sealed class SessionTelemetry : IAsyncDisposable
             LspJson.String(writer, "version"u8, BuildInfo.CompilerVersion);
             writer.WriteString("compilerOptions"u8, compilerOptions.Data.Span);
             if (project.Configuration.Raw is { ValueKind: JsonValueKind.Object } raw)
-                foreach (string property in new[] { "extends", "files", "include", "exclude" })
+                foreach (string property in RawConfigurationProperties)
                     writer.WriteString(property, raw.TryGetProperty(property, out _) ? "true" : "false");
             writer.WriteEndObject(); Measurements(writer, counts); writer.WriteEndObject();
         });
