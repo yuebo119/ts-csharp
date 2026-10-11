@@ -15,3 +15,27 @@ csharp_preserve_single_line_blocks = true
 
 [*.generated.cs]
 generated_code = true
+
+# ---------- EPSL 性能门禁（analyzer 段，2026-10-11 接入） ----------
+# 模板：~/.zcode/perf-template/dotnet/editorconfig.perf；规则描述已对 Microsoft Learn 官方文档逐条核实。
+# 本项目 Directory.Build.props 已设 TreatWarningsAsErrors，任何启用的规则实际都是 error——
+# 因此只启用存量清点零违例的规则；清点有违例的规则注释保留并附计数，清理后可升 error。
+# 新规则上线 SOP：先清点 -> 零违例才启用 -> 变异探针（故意提交违例确认构建红）。
+
+[*.cs]
+# 字符串与集合
+dotnet_diagnostic.CA1834.severity = error    # StringBuilder.Append(char) 替代单字符 Append(string)
+dotnet_diagnostic.CA1841.severity = error    # Dictionary.ContainsKey/ContainsValue 替代 Keys/Values.Contains
+dotnet_diagnostic.CA1845.severity = error    # AsSpan + string.Concat 替代 Substring 拼接
+dotnet_diagnostic.CA1846.severity = error    # AsSpan 替代 Substring
+dotnet_diagnostic.CA1847.severity = error    # 单字符查找用 String.Contains(char)
+dotnet_diagnostic.CA1854.severity = error    # TryGetValue 替代 ContainsKey + 索引器双重查找
+dotnet_diagnostic.CA1862.severity = error    # 大小写不敏感比较用 StringComparison 重载（不用 ToLower/ToUpper）
+# LINQ 分配族
+dotnet_diagnostic.CA1860.severity = error    # 判空用 Count/Length/IsEmpty 替代 Any()
+# async / 可靠性
+# 以下 4 条 2026-10-11 存量清点有违例，暂不启用（清理后升 error，SOP 见段首注释）：
+# dotnet_diagnostic.CA1849.severity = error  # async 方法内优先调异步版本（42 处：checker 双轨 sync/async API 的既有形态，触碰关系调用链须先过隔离巨文件批次，r27 教训）
+# dotnet_diagnostic.CA2012.severity = error   # ValueTask 恰好消费一次（15 处：同上，双轨 API 直接取结果的既有形态）
+# dotnet_diagnostic.CA1851.severity = error   # IEnumerable 多次枚举（2 处：src/TypeScript.Compiler/LanguageServer/LspJson.Completions.cs:14-15）
+# dotnet_diagnostic.CA1861.severity = error   # 常量数组参数（1 处：src/TypeScript.Compiler/LanguageServer/SessionTelemetry.cs:129）
