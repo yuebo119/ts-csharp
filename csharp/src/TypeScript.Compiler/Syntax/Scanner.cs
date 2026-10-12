@@ -192,9 +192,10 @@ public sealed partial class Scanner(SourceText source, bool skipTrivia = true, b
                 {
                     Flags |= TokenFlags.PrecedingJSDocComment;
                     ReadOnlySpan<byte> comment = input.AsSpan().Slice(TokenStart, pos - TokenStart);
-                    if (HasTag(comment, "deprecated"u8))
+                    ScanJSDocTags(comment, out bool deprecated, out bool seeOrLink);
+                    if (deprecated)
                         Flags |= TokenFlags.PrecedingJSDocWithDeprecated;
-                    if (HasTag(comment, "see"u8) || HasTag(comment, "link"u8) || HasTag(comment, "linkcode"u8) || HasTag(comment, "linkplain"u8))
+                    if (seeOrLink)
                         Flags |= TokenFlags.PrecedingJSDocWithSeeOrLink;
                 }
                 ProcessDirective(multi ? lastLine : TokenStart, pos, multi);
@@ -290,19 +291,36 @@ public sealed partial class Scanner(SourceText source, bool skipTrivia = true, b
         }
     }
 
-    private static bool HasTag(ReadOnlySpan<byte> text, ReadOnlySpan<byte> name)
+    // One pass over the '@' positions answers both tag families, instead of one full comment scan
+    // per tag name; the scan stops as soon as both flags are settled.
+    private static void ScanJSDocTags(ReadOnlySpan<byte> text, out bool deprecated, out bool seeOrLink)
     {
+        deprecated = seeOrLink = false;
         while (true)
         {
             int at = text.IndexOf((byte)'@');
             if (at < 0)
-                return false;
+                return;
             text = text[(at + 1)..];
-            if (text.StartsWith(name)
-                && (text.Length == name.Length || (int)text[name.Length] is ' ' or '\t' or '\r' or '\n' or '}' or '*'))
-                return true;
+            if (!deprecated && StartsTag(text, "deprecated"u8))
+            {
+                deprecated = true;
+                if (seeOrLink)
+                    return;
+            }
+            else if (!seeOrLink && (StartsTag(text, "see"u8) || StartsTag(text, "link"u8)
+                || StartsTag(text, "linkcode"u8) || StartsTag(text, "linkplain"u8)))
+            {
+                seeOrLink = true;
+                if (deprecated)
+                    return;
+            }
         }
     }
+
+    private static bool StartsTag(ReadOnlySpan<byte> text, ReadOnlySpan<byte> name)
+        => text.StartsWith(name)
+            && (text.Length == name.Length || (int)text[name.Length] is ' ' or '\t' or '\r' or '\n' or '}' or '*');
 
     private void ProcessDirective(int start, int end, bool multiline)
     {
