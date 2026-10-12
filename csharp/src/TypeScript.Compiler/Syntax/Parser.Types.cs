@@ -39,10 +39,10 @@ public sealed partial class Parser
     private async ValueTask<SyntaxNode> TypeOrPredicateCore()
     {
         await ParseStack;
-        if (IsIdentifier && Peek(() =>
+        if (IsIdentifier && Peek(static parser =>
         {
-            Next();
-            return !LineBreak && Token == K.IsKeyword;
+            parser.Next();
+            return !parser.LineBreak && parser.Token == K.IsKeyword;
         }))
         {
             int start = Pos;
@@ -108,10 +108,10 @@ public sealed partial class Parser
                 }
                 if (Token == K.QuestionToken)
                 {
-                    if (Peek(() =>
+                    if (Peek(static parser =>
                     {
-                        Next();
-                        return StartsType();
+                        parser.Next();
+                        return parser.StartsType();
                     }))
                         break;
                     Next();
@@ -178,10 +178,10 @@ public sealed partial class Parser
                     return Finish(factory.NewTypePredicateNode(null, thisType, await TypeCore().ConfigureAwait(false)), start);
                 return thisType;
             case K.AssertsKeyword:
-                if (!Peek(() =>
+                if (!Peek(static parser =>
                 {
-                    Next();
-                    return !LineBreak && (IsIdentifier || Token == K.ThisKeyword);
+                    parser.Next();
+                    return !parser.LineBreak && (parser.IsIdentifier || parser.Token == K.ThisKeyword);
                 }))
                     break;
                 var asserts = ParseToken();
@@ -244,7 +244,7 @@ public sealed partial class Parser
                 Next();
                 return Finish(factory.NewLiteralTypeNode(Finish(literal, start)), start);
             case K.MinusToken:
-                if (!Peek(() => Next() is K.NumericLiteral or K.BigIntLiteral))
+                if (!Peek(static parser => parser.Next() is K.NumericLiteral or K.BigIntLiteral))
                     break;
                 Next();
                 return Finish(factory.NewLiteralTypeNode(Finish(factory.NewPrefixUnaryExpression(K.MinusToken, Literal()), start)), start);
@@ -322,50 +322,50 @@ public sealed partial class Parser
             or K.TrueKeyword or K.FalseKeyword or K.NullKeyword
             or K.QuestionToken or K.ExclamationToken or K.AsteriskToken or K.DotDotDotToken
             or K.TemplateHead or K.NoSubstitutionTemplateLiteral
-        || Token == K.MinusToken && Peek(() => Next() is K.NumericLiteral or K.BigIntLiteral);
+        || Token == K.MinusToken && Peek(static parser => parser.Next() is K.NumericLiteral or K.BigIntLiteral);
 
-    private bool IsFunctionType() => Peek(() =>
+    private bool IsFunctionType() => Peek(static parser =>
         {
-            if (!Take(K.OpenParenToken))
+            if (!parser.Take(K.OpenParenToken))
                 return false;
-            if (Token is K.CloseParenToken or K.DotDotDotToken)
+            if (parser.Token is K.CloseParenToken or K.DotDotDotToken)
                 return true;
             // A parenthesized type beginning with another '(' is not a parameter.
             // Inspect just the parameter start, rather than rescanning each enclosing
             // parenthesis to its matching close on deeply nested type expressions.
-            while (IsModifierKind(Token) && Peek(() =>
+            while (IsModifierKind(parser.Token) && parser.Peek(static inner =>
             {
-                Next();
-                return !LineBreak && (IsIdentifier || Token is K.ThisKeyword or K.OpenBracketToken or K.OpenBraceToken or K.DotDotDotToken);
+                inner.Next();
+                return !inner.LineBreak && (inner.IsIdentifier || inner.Token is K.ThisKeyword or K.OpenBracketToken or K.OpenBraceToken or K.DotDotDotToken);
             }))
-                Next();
-            if (Take(K.DotDotDotToken))
+                parser.Next();
+            if (parser.Take(K.DotDotDotToken))
                 return true;
-            if (IsIdentifier || Token == K.ThisKeyword)
-                Next();
-            else if (Token is K.OpenBracketToken or K.OpenBraceToken)
+            if (parser.IsIdentifier || parser.Token == K.ThisKeyword)
+                parser.Next();
+            else if (parser.Token is K.OpenBracketToken or K.OpenBraceToken)
             {
                 var close = new Stack<K>();
                 do
                 {
-                    if (Token == K.OpenBracketToken)
+                    if (parser.Token == K.OpenBracketToken)
                         close.Push(K.CloseBracketToken);
-                    else if (Token == K.OpenBraceToken)
+                    else if (parser.Token == K.OpenBraceToken)
                         close.Push(K.CloseBraceToken);
-                    else if (Token is K.CloseBracketToken or K.CloseBraceToken)
+                    else if (parser.Token is K.CloseBracketToken or K.CloseBraceToken)
                     {
-                        if (!close.TryPop(out K expected) || Token != expected)
+                        if (!close.TryPop(out K expected) || parser.Token != expected)
                             return false;
                     }
-                    Next();
-                } while (close.Count != 0 && Token != K.EndOfFile);
+                    parser.Next();
+                } while (close.Count != 0 && parser.Token != K.EndOfFile);
                 if (close.Count != 0)
                     return false;
             }
             else
                 return false;
-            return Token is K.ColonToken or K.CommaToken or K.QuestionToken or K.EqualsToken
-                || Token == K.CloseParenToken && Next() == K.EqualsGreaterThanToken;
+            return parser.Token is K.ColonToken or K.CommaToken or K.QuestionToken or K.EqualsToken
+                || parser.Token == K.CloseParenToken && parser.Next() == K.EqualsGreaterThanToken;
         });
 
     private bool StartsFunctionType() => Token is K.LessThanToken or K.NewKeyword
@@ -383,26 +383,26 @@ public sealed partial class Parser
         return requireClose && !closed ? null : args;
     }
 
-    private bool IsIndexSignature() => Token == K.OpenBracketToken && Peek(() =>
+    private bool IsIndexSignature() => Token == K.OpenBracketToken && Peek(static parser =>
         {
-            Next();
-            if (Token is K.DotDotDotToken or K.CloseBracketToken)
+            parser.Next();
+            if (parser.Token is K.DotDotDotToken or K.CloseBracketToken)
                 return true;
-            if (IsModifierKind(Token))
+            if (IsModifierKind(parser.Token))
             {
-                Next();
-                if (IsIdentifier)
+                parser.Next();
+                if (parser.IsIdentifier)
                     return true;
             }
-            else if (!IsIdentifier)
+            else if (!parser.IsIdentifier)
                 return false;
             else
-                Next();
-            if (Token is K.ColonToken or K.CommaToken)
+                parser.Next();
+            if (parser.Token is K.ColonToken or K.CommaToken)
                 return true;
-            if (!Take(K.QuestionToken))
+            if (!parser.Take(K.QuestionToken))
                 return false;
-            return Token is K.ColonToken or K.CommaToken or K.CloseBracketToken;
+            return parser.Token is K.ColonToken or K.CommaToken or K.CloseBracketToken;
         });
 
     private async ValueTask<SyntaxNode> IndexSignatureCore(NodeList? modifiers, int start)
@@ -568,11 +568,11 @@ public sealed partial class Parser
         int start = Pos;
         TokenFlags trivia = scanner.Flags;
         var rest = OptionalToken(K.DotDotDotToken);
-        if ((IsIdentifier || Token is >= K.FirstKeyword and <= K.LastKeyword) && Peek(() =>
+        if ((IsIdentifier || Token is >= K.FirstKeyword and <= K.LastKeyword) && Peek(static parser =>
         {
-            Next();
-            Take(K.QuestionToken);
-            return Token == K.ColonToken;
+            parser.Next();
+            parser.Take(K.QuestionToken);
+            return parser.Token == K.ColonToken;
         }))
         {
             var name = Identifier(true);
@@ -615,16 +615,16 @@ public sealed partial class Parser
         return type;
     }
 
-    private bool IsMappedType() => Peek(() =>
+    private bool IsMappedType() => Peek(static parser =>
         {
-            Next();
-            if (Token is K.PlusToken or K.MinusToken)
-                Next();
-            Take(K.ReadonlyKeyword);
-            if (!Take(K.OpenBracketToken) || !IsIdentifier)
+            parser.Next();
+            if (parser.Token is K.PlusToken or K.MinusToken)
+                parser.Next();
+            parser.Take(K.ReadonlyKeyword);
+            if (!parser.Take(K.OpenBracketToken) || !parser.IsIdentifier)
                 return false;
-            Next();
-            return Token == K.InKeyword;
+            parser.Next();
+            return parser.Token == K.InKeyword;
         });
 
     private async ValueTask<SyntaxNode> MappedTypeCore()

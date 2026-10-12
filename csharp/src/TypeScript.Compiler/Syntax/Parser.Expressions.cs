@@ -189,12 +189,12 @@ public sealed partial class Parser
 
             if (Token != K.OpenParenToken)
                 return false;
-            if (Peek(() =>
+            if (Peek(static parser =>
             {
-                Next();
-                return Token is not (K.CloseParenToken or K.OpenBracketToken or K.OpenBraceToken or K.DotDotDotToken or K.ThisKeyword)
-                    && !IsBindingIdentifier
-                    && !IsModifierKind(Token);
+                parser.Next();
+                return parser.Token is not (K.CloseParenToken or K.OpenBracketToken or K.OpenBraceToken or K.DotDotDotToken or K.ThisKeyword)
+                    && !parser.IsBindingIdentifier
+                    && !IsModifierKind(parser.Token);
             }))
                 return false;
             NodeList parameters = await ParametersCore(async ? NodeFlags.AwaitContext : 0, requireComplete: true).ConfigureAwait(false);
@@ -236,7 +236,7 @@ public sealed partial class Parser
     {
         if (Token is not (K.OpenParenToken or K.LessThanToken or K.AsyncKeyword))
             return 0;
-        if (Token == K.AsyncKeyword && !Peek(() => Next() is K.OpenParenToken or K.LessThanToken))
+        if (Token == K.AsyncKeyword && !Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken))
             return 0;
         int result = 0;
         Peek(() =>
@@ -263,10 +263,10 @@ public sealed partial class Parser
                     return 0;
                 if (second == K.DotDotDotToken)
                     return 1;
-                if (IsModifierKind(second) && second != K.AsyncKeyword && Peek(() =>
+                if (IsModifierKind(second) && second != K.AsyncKeyword && Peek(static parser =>
                 {
-                    Next();
-                    return IsIdentifier;
+                    parser.Next();
+                    return parser.IsIdentifier;
                 }))
                     return Next() == K.AsKeyword ? -1 : 1;
                 if (!IsIdentifier && second != K.ThisKeyword)
@@ -359,10 +359,10 @@ public sealed partial class Parser
                 Next();
                 return Finish(factory.NewVoidExpression(await UnaryExpressionCore(simple: true).ConfigureAwait(false)), start);
             case K.AwaitKeyword:
-                if ((context & NodeFlags.AwaitContext) != 0 || Peek(() =>
+                if ((context & NodeFlags.AwaitContext) != 0 || Peek(static parser =>
                 {
-                    Next();
-                    return !LineBreak && (Token >= K.Identifier || Token is K.NumericLiteral or K.BigIntLiteral or K.StringLiteral);
+                    parser.Next();
+                    return !parser.LineBreak && (parser.Token >= K.Identifier || parser.Token is K.NumericLiteral or K.BigIntLiteral or K.StringLiteral);
                 }))
                 {
                     Next();
@@ -371,10 +371,10 @@ public sealed partial class Parser
 
                 break;
             case K.YieldKeyword:
-                if ((context & NodeFlags.YieldContext) != 0 || Peek(() =>
+                if ((context & NodeFlags.YieldContext) != 0 || Peek(static parser =>
                 {
-                    Next();
-                    return !LineBreak && (Token >= K.Identifier || Token is K.NumericLiteral or K.BigIntLiteral or K.StringLiteral);
+                    parser.Next();
+                    return !parser.LineBreak && (parser.Token >= K.Identifier || parser.Token is K.NumericLiteral or K.BigIntLiteral or K.StringLiteral);
                 }))
                 {
                     if (!allowYield)
@@ -395,7 +395,7 @@ public sealed partial class Parser
                 var type = await TypeCore().ConfigureAwait(false);
                 Expected(K.GreaterThanToken);
                 return Finish(factory.NewTypeAssertion(type, await UnaryExpressionCore(simple: true).ConfigureAwait(false)), start);
-            case K.LessThanToken when scanner.Jsx && (simple || Peek(() => Next() == K.GreaterThanToken || Token >= K.Identifier)):
+            case K.LessThanToken when scanner.Jsx && (simple || Peek(static parser => parser.Next() == K.GreaterThanToken || parser.Token >= K.Identifier)):
                 return await JsxElementCore(true, mustBeUnary: simple).ConfigureAwait(false);
         }
 
@@ -482,8 +482,8 @@ public sealed partial class Parser
                         source.Text[construct.Pos..construct.End].Trim());
                 NodeList? args = Token == K.OpenParenToken ? (await ArgumentsCore().ConfigureAwait(false)) : null;
                 return Finish(factory.NewNewExpression(construct, types, args), start);
-            case K.ImportKeyword when Peek(() => Next() is K.OpenParenToken or K.LessThanToken or K.DotToken):
-                if (!Peek(() => Next() is K.OpenParenToken or K.DotToken or K.LessThanToken))
+            case K.ImportKeyword when Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken or K.DotToken):
+                if (!Peek(static parser => parser.Next() is K.OpenParenToken or K.DotToken or K.LessThanToken))
                 {
                     Error(Messages.Expression_expected);
                     return Finish(factory.NewIdentifier(Utf8String.Empty), Pos, Pos);
@@ -680,7 +680,7 @@ public sealed partial class Parser
                 or K.SlashEqualsToken or K.PlusToken or K.MinusToken or K.TildeToken or K.ExclamationToken or K.DeleteKeyword
                 or K.TypeOfKeyword or K.VoidKeyword or K.PlusPlusToken or K.MinusMinusToken or K.LessThanToken or K.AwaitKeyword
                 or K.YieldKeyword or K.PrivateIdentifier or K.AtToken
-            || Token == K.ImportKeyword && Peek(() => Next() is K.OpenParenToken or K.LessThanToken or K.DotToken)
+            || Token == K.ImportKeyword && Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken or K.DotToken)
             || Precedence(Token) >= 4 && (Token != K.InKeyword || (context & NodeFlags.DisallowInContext) == 0);
 
     private async ValueTask<NodeList> ArgumentsCore()
@@ -727,12 +727,12 @@ public sealed partial class Parser
             Error(Messages.Property_assignment_expected);
         var modifiers = await ModifiersCore().ConfigureAwait(false);
         K accessor = K.Unknown;
-        if (Token is K.GetKeyword or K.SetKeyword && Peek(() =>
+        if (Token is K.GetKeyword or K.SetKeyword && Peek(static parser =>
         {
-            Next();
-            return !LineBreak
-                && (Token >= K.Identifier
-                    || Token is K.PrivateIdentifier or K.StringLiteral or K.NumericLiteral or K.BigIntLiteral or K.OpenBracketToken);
+            parser.Next();
+            return !parser.LineBreak
+                && (parser.Token >= K.Identifier
+                    || parser.Token is K.PrivateIdentifier or K.StringLiteral or K.NumericLiteral or K.BigIntLiteral or K.OpenBracketToken);
         }))
         {
             accessor = Token;

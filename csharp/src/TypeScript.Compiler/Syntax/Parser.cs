@@ -141,7 +141,7 @@ public sealed partial class Parser
                 var expression = Token switch
                 {
                     K.OpenBracketToken or K.TrueKeyword or K.FalseKeyword or K.NullKeyword => await PrimaryExpressionCore().ConfigureAwait(false),
-                    K.MinusToken when Peek(() => Next() == K.NumericLiteral && Next() != K.ColonToken)
+                    K.MinusToken when Peek(static parser => parser.Next() == K.NumericLiteral && parser.Next() != K.ColonToken)
                         => await UnaryExpressionCore().ConfigureAwait(false),
                     K.NumericLiteral or K.StringLiteral when !NextIs(K.ColonToken) => Literal(),
                     _ => await ObjectLiteralCore().ConfigureAwait(false)
@@ -475,10 +475,10 @@ public sealed partial class Parser
 
     private SyntaxNode RightOfDot(bool allowPrivate, bool allowUnicodeEscape = true)
     {
-        if (LineBreak && Token >= K.Identifier && Peek(() =>
+        if (LineBreak && Token >= K.Identifier && Peek(static parser =>
         {
-            Next();
-            return !LineBreak && Token >= K.Identifier;
+            parser.Next();
+            return !parser.LineBreak && parser.Token >= K.Identifier;
         }))
         {
             ErrorAt(Messages.Identifier_expected, Pos, 0);

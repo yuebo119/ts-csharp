@@ -10,21 +10,42 @@ public sealed partial class EmitContext
     {
         internal readonly List<SyntaxNode> Variables = [], Functions = [], Initializers = [];
         internal bool InParameters, HoistedInParameters;
+
+        internal void Reset()
+        {
+            Variables.Clear();
+            Functions.Clear();
+            Initializers.Clear();
+            InParameters = HoistedInParameters = false;
+        }
     }
 
     private readonly Stack<EnvironmentScope> variableScopes = [], lexicalScopes = [];
+    // Scopes are pushed and popped in lock step and their lists are consumed (copied) by the End
+    // calls, so a bounded pool replaces the per-function-body scope and its three list objects.
+    private readonly Stack<EnvironmentScope> scopePool = [];
+
+    private EnvironmentScope RentScope() => scopePool.TryPop(out var pooled) ? pooled : new();
+
+    private void ReturnScope(EnvironmentScope scope)
+    {
+        scope.Reset();
+        if (scopePool.Count < 64)
+            scopePool.Push(scope);
+    }
+
     internal (int Variables, int Lexical) EnvironmentDepth => (variableScopes.Count, lexicalScopes.Count);
     internal void RestoreEnvironmentDepth((int Variables, int Lexical) depth)
     {
         while (variableScopes.Count > depth.Variables)
-            variableScopes.Pop();
+            ReturnScope(variableScopes.Pop());
         while (lexicalScopes.Count > depth.Lexical)
-            lexicalScopes.Pop();
+            ReturnScope(lexicalScopes.Pop());
     }
 
     public void StartVariableEnvironment()
     {
-        variableScopes.Push(new());
+        variableScopes.Push(RentScope());
         StartLexicalEnvironment();
     }
 
@@ -36,14 +57,17 @@ public sealed partial class EmitContext
             statements.Add(HoistedVariables(scope.Variables, NodeFlags.None));
         statements.AddRange(scope.Initializers);
         statements.AddRange(EndLexicalEnvironment());
+        ReturnScope(scope);
         return statements;
     }
 
-    public void StartLexicalEnvironment() => lexicalScopes.Push(new());
+    public void StartLexicalEnvironment() => lexicalScopes.Push(RentScope());
     public IReadOnlyList<SyntaxNode> EndLexicalEnvironment()
     {
         var scope = lexicalScopes.Pop();
-        return scope.Variables.Count == 0 ? [] : [HoistedVariables(scope.Variables, NodeFlags.Let)];
+        IReadOnlyList<SyntaxNode> result = scope.Variables.Count == 0 ? [] : [HoistedVariables(scope.Variables, NodeFlags.Let)];
+        ReturnScope(scope);
+        return result;
     }
 
     public void AddVariableDeclaration(IdentifierNode name)

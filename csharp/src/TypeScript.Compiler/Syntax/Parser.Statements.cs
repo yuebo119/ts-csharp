@@ -146,7 +146,7 @@ public sealed partial class Parser
                 case K.ExportKeyword:
                     return await ExportCore().ConfigureAwait(false);
                 case K.ImportKeyword:
-                    if (!Peek(() => Next() is K.OpenParenToken or K.DotToken or K.LessThanToken))
+                    if (!Peek(static parser => parser.Next() is K.OpenParenToken or K.DotToken or K.LessThanToken))
                         return await ImportCore(null, start).ConfigureAwait(false);
                     break;
             }
@@ -159,10 +159,10 @@ public sealed partial class Parser
         {
             case K.VarKeyword:
             case K.ConstKeyword:
-            case K.LetKeyword when modifiers is not null || Peek(() =>
+            case K.LetKeyword when modifiers is not null || Peek(static parser =>
             {
-                Next();
-                return IsBindingIdentifier || Token is K.OpenBraceToken or K.OpenBracketToken;
+                parser.Next();
+                return parser.IsBindingIdentifier || parser.Token is K.OpenBraceToken or K.OpenBracketToken;
             }):
                 var declarations = await VariableDeclarationsCore().ConfigureAwait(false);
                 Semicolon();
@@ -249,16 +249,16 @@ public sealed partial class Parser
             case K.NamespaceKeyword:
             case K.ModuleKeyword:
             case K.GlobalKeyword:
-                if (Peek(() =>
+                if (Peek(static parser =>
                 {
-                    bool globalModule = Token == K.GlobalKeyword;
-                    Next();
-                    return !LineBreak && (IsIdentifier || Token == K.StringLiteral || globalModule && Token == K.OpenBraceToken);
+                    bool globalModule = parser.Token == K.GlobalKeyword;
+                    parser.Next();
+                    return !parser.LineBreak && (parser.IsIdentifier || parser.Token == K.StringLiteral || globalModule && parser.Token == K.OpenBraceToken);
                 }))
                     return await ModuleCore(modifiers, start).ConfigureAwait(false);
                 break;
             case K.ImportKeyword:
-                if (!Peek(() => Next() is K.OpenParenToken or K.LessThanToken or K.DotToken))
+                if (!Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken or K.DotToken))
                     return await ImportCore(modifiers, start).ConfigureAwait(false);
                 break;
             case K.ExportKeyword when modifiers is not null:
@@ -278,17 +278,18 @@ public sealed partial class Parser
         return Finish(factory.NewExpressionStatement(expression), start);
     }
 
-    private bool IsUsingDeclaration(bool disallowOf = false) => Peek(() =>
+    private bool IsUsingDeclaration(bool disallowOf = false) => Peek((Parser: this, DisallowOf: disallowOf), static state =>
     {
-        Next();
-        if (LineBreak)
+        var parser = state.Parser;
+        parser.Next();
+        if (parser.LineBreak)
             return false;
-        if (disallowOf && Token == K.OfKeyword)
-            return Next() is K.EqualsToken or K.ColonToken or K.SemicolonToken;
-        return IsBindingIdentifier || Token == K.OpenBraceToken;
+        if (state.DisallowOf && parser.Token == K.OfKeyword)
+            return parser.Next() is K.EqualsToken or K.ColonToken or K.SemicolonToken;
+        return parser.IsBindingIdentifier || parser.Token == K.OpenBraceToken;
     });
 
-    private bool IsAwaitUsingDeclaration() => Peek(() => Next() == K.UsingKeyword && IsUsingDeclaration());
+    private bool IsAwaitUsingDeclaration() => Peek(static parser => parser.Next() == K.UsingKeyword && parser.IsUsingDeclaration());
 
     private bool StartsDeclaration()
     {
@@ -352,13 +353,13 @@ public sealed partial class Parser
             or K.ThrowKeyword or K.TryKeyword or K.DebuggerKeyword or K.CatchKeyword or K.FinallyKeyword
             or K.AsyncKeyword or K.DeclareKeyword or K.InterfaceKeyword or K.ModuleKeyword or K.NamespaceKeyword
             or K.TypeKeyword or K.GlobalKeyword or K.DeferKeyword => true,
-        K.ImportKeyword => Peek(static parser => parser.StartsDeclaration()) || Peek(() => Next() is K.OpenParenToken or K.LessThanToken or K.DotToken),
+        K.ImportKeyword => Peek(static parser => parser.StartsDeclaration()) || Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken or K.DotToken),
         K.ConstKeyword or K.ExportKeyword => Peek(static parser => parser.StartsDeclaration()),
         K.AccessorKeyword or K.PublicKeyword or K.PrivateKeyword or K.ProtectedKeyword or K.StaticKeyword or K.ReadonlyKeyword =>
-            Peek(static parser => parser.StartsDeclaration()) || !Peek(() =>
+            Peek(static parser => parser.StartsDeclaration()) || !Peek(static parser =>
             {
-                Next();
-                return !LineBreak && (IsIdentifier || Token is >= K.FirstKeyword and <= K.LastKeyword);
+                parser.Next();
+                return !parser.LineBreak && (parser.IsIdentifier || parser.Token is >= K.FirstKeyword and <= K.LastKeyword);
             }),
         _ => StartsExpression()
     };
@@ -387,10 +388,10 @@ public sealed partial class Parser
         {
             statements = await ListCore(K.CloseBraceToken, ParseStatementCore, true,
                 stop: () => classMemberBodyDepth != 0 && Token is K.PublicKeyword or K.PrivateKeyword or K.ProtectedKeyword &&
-                    Peek(() =>
+                    Peek(static parser =>
                     {
-                        Next();
-                        return !LineBreak && (Token >= K.Identifier || Token is K.PrivateIdentifier or K.OpenBracketToken);
+                        parser.Next();
+                        return !parser.LineBreak && (parser.Token >= K.Identifier || parser.Token is K.PrivateIdentifier or K.OpenBracketToken);
                     })).ConfigureAwait(false);
         }
         finally
@@ -571,10 +572,10 @@ public sealed partial class Parser
         Next();
         int listStart = Pos;
         var declarations = new List<SyntaxNode>();
-        bool emptyOf = Token == K.OfKeyword && Peek(() =>
+        bool emptyOf = Token == K.OfKeyword && Peek(static parser =>
         {
-            Next();
-            return IsIdentifier && Next() == K.CloseParenToken;
+            parser.Next();
+            return parser.IsIdentifier && parser.Next() == K.CloseParenToken;
         });
         if (!emptyOf && Token is not (K.EndOfFile or K.SemicolonToken or K.CloseParenToken or K.InKeyword)
             && (IsBindingIdentifier || Token is K.PrivateIdentifier or K.OpenBraceToken or K.OpenBracketToken))
@@ -728,7 +729,7 @@ public sealed partial class Parser
     {
         await ParseStack;
         Expected(K.ClassKeyword);
-        var name = IsBindingIdentifier && !(Token == K.ImplementsKeyword && Peek(() => Next() >= K.Identifier))
+        var name = IsBindingIdentifier && !(Token == K.ImplementsKeyword && Peek(static parser => parser.Next() >= K.Identifier))
             ? Identifier(binding: true)
             : null;
         var parameters = await TypeParametersCore().ConfigureAwait(false);
@@ -856,7 +857,7 @@ public sealed partial class Parser
         or K.TrueKeyword or K.FalseKeyword or K.NumericLiteral or K.BigIntLiteral or K.StringLiteral
         or K.NoSubstitutionTemplateLiteral or K.TemplateHead or K.OpenParenToken or K.OpenBracketToken or K.OpenBraceToken
         or K.FunctionKeyword or K.ClassKeyword or K.NewKeyword or K.SlashToken or K.SlashEqualsToken
-        || Token == K.ImportKeyword && Peek(() => Next() is K.OpenParenToken or K.LessThanToken or K.DotToken);
+        || Token == K.ImportKeyword && Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken or K.DotToken);
 
     private async ValueTask<SyntaxNode> TypeMemberCore(bool inClass)
     {
@@ -921,7 +922,7 @@ public sealed partial class Parser
             return Finish(factory.NewCallSignatureDeclaration(types, parameters, type), start);
         }
 
-        if (!inClass && Token == K.NewKeyword && Peek(() => Next() is K.OpenParenToken or K.LessThanToken))
+        if (!inClass && Token == K.NewKeyword && Peek(static parser => parser.Next() is K.OpenParenToken or K.LessThanToken))
         {
             Next();
             var types = await TypeParametersCore().ConfigureAwait(false);
@@ -935,10 +936,10 @@ public sealed partial class Parser
             return await IndexSignatureCore(modifiers, start).ConfigureAwait(false);
 
         K accessor = K.Unknown;
-        if (Token is K.GetKeyword or K.SetKeyword && Peek(() =>
+        if (Token is K.GetKeyword or K.SetKeyword && Peek(static parser =>
         {
-            Next();
-            return Token is K.Identifier or K.PrivateIdentifier or K.StringLiteral or K.NumericLiteral or K.BigIntLiteral
+            parser.Next();
+            return parser.Token is K.Identifier or K.PrivateIdentifier or K.StringLiteral or K.NumericLiteral or K.BigIntLiteral
                 or K.OpenBracketToken or >= K.FirstKeyword and <= K.LastKeyword;
         }))
         {
@@ -1056,7 +1057,7 @@ public sealed partial class Parser
         IdentifierNode? name = IsBindingIdentifier ? Identifier(binding: true) : null;
         K phase = K.Unknown;
         if (name?.Text == Utf8Literals.Type
-            && (Token != K.FromKeyword || IsIdentifier && Peek(() => Next() is K.FromKeyword or K.EqualsToken))
+            && (Token != K.FromKeyword || IsIdentifier && Peek(static parser => parser.Next() is K.FromKeyword or K.EqualsToken))
             && (IsIdentifier || Token is K.AsteriskToken or K.OpenBraceToken))
         {
             phase = K.TypeKeyword;
@@ -1265,12 +1266,12 @@ public sealed partial class Parser
 
         if (Token == K.DefaultKeyword)
         {
-            if (Peek(() =>
+            if (Peek(static parser =>
             {
-                Next();
-                return Token is K.FunctionKeyword or K.ClassKeyword or K.InterfaceKeyword or K.AtToken
-                    || Token == K.AbstractKeyword && NextIs(K.ClassKeyword)
-                    || Token == K.AsyncKeyword && Peek(() => Next() == K.FunctionKeyword && !LineBreak);
+                parser.Next();
+                return parser.Token is K.FunctionKeyword or K.ClassKeyword or K.InterfaceKeyword or K.AtToken
+                    || parser.Token == K.AbstractKeyword && parser.NextIs(K.ClassKeyword)
+                    || parser.Token == K.AsyncKeyword && parser.Peek(static inner => inner.Next() == K.FunctionKeyword && !inner.LineBreak);
             }))
                 return await DeclarationWithExportCore(leadingModifiers, start, exportStart, exportEnd).ConfigureAwait(false);
 
@@ -1283,7 +1284,7 @@ public sealed partial class Parser
             return Finish(factory.NewExportAssignment(leadingModifiers, false, null, expression), start);
         }
 
-        bool typeOnly = Token == K.TypeKeyword && Peek(() => Next() is K.OpenBraceToken or K.AsteriskToken);
+        bool typeOnly = Token == K.TypeKeyword && Peek(static parser => parser.Next() is K.OpenBraceToken or K.AsteriskToken);
         if (typeOnly)
             Next();
         if (Token is K.OpenBraceToken or K.AsteriskToken)
