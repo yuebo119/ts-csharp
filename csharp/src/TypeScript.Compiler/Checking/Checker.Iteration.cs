@@ -42,7 +42,7 @@ internal sealed partial class Checker : IIteratorProtocolHost, IIterationElement
         var types = new List<Type>();
         foreach (Utf8String name in async
             ? new Utf8String[] { Utf8Literals.ReadableStreamAsyncIterator }
-            : [Utf8String.Copy("ArrayIterator"u8), Utf8String.Copy("MapIterator"u8), Utf8String.Copy("SetIterator"u8), Utf8String.Copy("StringIterator"u8)])
+            : [Utf8Literals.ArrayIterator, Utf8Literals.MapIterator, Utf8Literals.SetIterator, Utf8Literals.StringIterator])
             types.Add(await IterationGlobalAsync(name, 1, false, cancellation));
         return types;
     }

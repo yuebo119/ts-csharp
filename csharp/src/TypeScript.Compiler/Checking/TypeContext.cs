@@ -369,6 +369,11 @@ public sealed class TypeContext
         return result;
     }
 
+    // Signatures are created per declaration, and most carry no type parameters; a shared empty
+    // wrapper keeps those off the allocation path instead of one ReadOnlyCollection per signature.
+    private static readonly IReadOnlyList<TypeParameter> EmptyTypeParameters = Array.AsReadOnly(Array.Empty<TypeParameter>());
+    private static readonly IReadOnlyList<Symbol> EmptySignatureParameters = Array.AsReadOnly(Array.Empty<Symbol>());
+
     internal Signature NewSignature(SignatureFlags flags, SyntaxNode? declaration, ReadOnlySpan<TypeParameter> typeParameters,
         Symbol? thisParameter, ReadOnlySpan<Symbol> parameters, Type? returnType, TypePredicate? predicate, int minimumArgumentCount)
     {
@@ -382,9 +387,9 @@ public sealed class TypeContext
         {
             Flags = flags,
             Declaration = declaration,
-            TypeParameters = Array.AsReadOnly(typeParameters.ToArray()),
+            TypeParameters = typeParameters.Length == 0 ? EmptyTypeParameters : Array.AsReadOnly(typeParameters.ToArray()),
             ThisParameter = thisParameter,
-            Parameters = Array.AsReadOnly(parameters.ToArray()),
+            Parameters = parameters.Length == 0 ? EmptySignatureParameters : Array.AsReadOnly(parameters.ToArray()),
             ResolvedReturnType = returnType,
             ResolvedTypePredicate = predicate,
             MinArgumentCount = minimumArgumentCount
@@ -425,31 +430,55 @@ public sealed class TypeContext
 // Owning context is checked before constructing a key, so local IDs are sufficient.
 internal readonly struct TypeCacheKey : IEquatable<TypeCacheKey>
 {
-    private readonly long[] values;
+    // Keys of up to six ids stay inline: every union, reference and instantiation cache probe
+    // constructs one, so a heap array per probe (on cache hits included) was pure garbage.
+    private const int InlineCapacity = 6;
+    private const int StackBuffer = 32;
+
+    private readonly long v0, v1, v2, v3, v4, v5;
+    private readonly long[]? overflow;
+    private readonly int count;
     private readonly int hash;
 
     internal TypeCacheKey(ReadOnlySpan<Type> types)
     {
-        values = new long[types.Length];
+        Span<long> values = stackalloc long[types.Length];
         for (int i = 0; i < types.Length; i++)
             values[i] = types[i].Id;
-        hash = Hash(values);
+        this = new TypeCacheKey(values);
     }
 
-    private TypeCacheKey(long[] values)
+    private TypeCacheKey(ReadOnlySpan<long> values)
     {
-        this.values = values;
+        count = values.Length;
         hash = Hash(values);
+        overflow = values.Length > InlineCapacity ? values.ToArray() : null;
+        v0 = values.Length > 0 ? values[0] : 0;
+        v1 = values.Length > 1 ? values[1] : 0;
+        v2 = values.Length > 2 ? values[2] : 0;
+        v3 = values.Length > 3 ? values[3] : 0;
+        v4 = values.Length > 4 ? values[4] : 0;
+        v5 = values.Length > 5 ? values[5] : 0;
     }
 
     internal static TypeCacheKey Union(ReadOnlySpan<Type> types, Type? origin, TypeAlias? alias)
-        => new(UnionValues(types, origin, alias));
+    {
+        int length = UnionValueLength(types, origin, alias, suffixLength: 0);
+        Span<long> buffer = length <= StackBuffer ? stackalloc long[StackBuffer] : new long[length];
+        int count = WriteUnionValues(types, origin, alias, suffixLength: 0, buffer);
+        return new(buffer[..count]);
+    }
 
-    private static long[] UnionValues(ReadOnlySpan<Type> types, Type? origin, TypeAlias? alias, int suffixLength = 0)
+    private static int UnionValueLength(ReadOnlySpan<Type> types, Type? origin, TypeAlias? alias, int suffixLength)
     {
         int typeCount = origin is UnionOrIntersectionType compositeOrigin ? compositeOrigin.Types.Count : types.Length;
         int prefixLength = origin is IndexType ? 2 : 1;
-        var values = new long[prefixLength + typeCount + 1 + (alias is null ? 0 : alias.TypeArguments.Count + 1) + suffixLength];
+        return prefixLength + typeCount + 1 + (alias is null ? 0 : alias.TypeArguments.Count + 1) + suffixLength;
+    }
+
+    // Writes the key values and returns the total length including the caller-filled suffix slots.
+    private static int WriteUnionValues(ReadOnlySpan<Type> types, Type? origin, TypeAlias? alias, int suffixLength, Span<long> values)
+    {
         int offset = 0;
         switch (origin)
         {
@@ -479,18 +508,20 @@ internal readonly struct TypeCacheKey : IEquatable<TypeCacheKey>
             foreach (var type in alias.TypeArguments)
                 values[offset++] = type.Id;
         }
-        return values;
+        return offset + suffixLength;
     }
 
     internal static TypeCacheKey Instantiation(ReadOnlySpan<Type> types, TypeAlias? alias, bool singleSignature)
     {
-        var values = UnionValues(types, null, alias, suffixLength: 2);
-        values[^2] = -2;
-        values[^1] = singleSignature ? 1 : 0;
-        return new(values);
+        int length = UnionValueLength(types, null, alias, suffixLength: 2);
+        Span<long> buffer = length <= StackBuffer ? stackalloc long[StackBuffer] : new long[length];
+        int count = WriteUnionValues(types, null, alias, suffixLength: 2, buffer);
+        buffer[count - 2] = -2;
+        buffer[count - 1] = singleSignature ? 1 : 0;
+        return new(buffer[..count]);
     }
 
-    private static int Hash(long[] values)
+    private static int Hash(ReadOnlySpan<long> values)
     {
         var hash = new HashCode();
         foreach (long value in values)
@@ -498,7 +529,10 @@ internal readonly struct TypeCacheKey : IEquatable<TypeCacheKey>
         return hash.ToHashCode();
     }
 
-    public bool Equals(TypeCacheKey other) => hash == other.hash && values.AsSpan().SequenceEqual(other.values);
+    public bool Equals(TypeCacheKey other) => hash == other.hash && count == other.count
+        && (overflow is null
+            ? other.overflow is null && v0 == other.v0 && v1 == other.v1 && v2 == other.v2 && v3 == other.v3 && v4 == other.v4 && v5 == other.v5
+            : other.overflow is not null && overflow.AsSpan().SequenceEqual(other.overflow));
 
     public override bool Equals(object? obj) => obj is TypeCacheKey other && Equals(other);
 

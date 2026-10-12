@@ -20,7 +20,7 @@ internal sealed partial class Checker
             && SemanticSyntax.Source(attribute) == SemanticSyntax.Source(node) ? attribute.Name! : node;
         Utf8String name = TypeDisplay.SymbolName(property), targetText = await TypeDisplay.GetAsync(errorTarget, cancellation);
         var properties = await Properties.GetAsync(errorTarget, cancellation);
-        Utf8String? jsxName = name == Utf8Literals.Class ? Utf8String.Copy("className"u8) : name == Utf8Literals.For ? Utf8String.Copy("htmlFor"u8) : null;
+        Utf8String? jsxName = name == Utf8Literals.Class ? Utf8Literals.ClassName : name == Utf8Literals.For ? Utf8Literals.HtmlFor : null;
         var suggestion = (jsxName is null ? null : properties.FirstOrDefault(p => p.Name == jsxName))
             ?? await SymbolSuggestions.FindAsync(name, properties, SymbolFlags.Value, cancellation);
         var detail = CheckerDiagnostic.Create(

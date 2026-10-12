@@ -58,9 +58,9 @@ internal sealed class TypeViews(TypeContext context, TypeAlgebra algebra, TypeCo
             apparentIntersections[original] = apparent;
             return apparent;
         }
-        Utf8String? name = (type.Flags & TypeFlags.StringLike) != 0 ? Utf8String.Copy("String"u8) : (type.Flags & TypeFlags.NumberLike) != 0 ? Utf8String.Copy("Number"u8)
-            : (type.Flags & TypeFlags.BigIntLike) != 0 ? Utf8String.Copy("BigInt"u8) : (type.Flags & TypeFlags.BooleanLike) != 0 ? Utf8String.Copy("Boolean"u8)
-            : (type.Flags & TypeFlags.ESSymbolLike) != 0 ? Utf8String.Copy("Symbol"u8) : null;
+        Utf8String? name = (type.Flags & TypeFlags.StringLike) != 0 ? Utf8Literals.String : (type.Flags & TypeFlags.NumberLike) != 0 ? Utf8Literals.Number
+            : (type.Flags & TypeFlags.BigIntLike) != 0 ? Utf8Literals.BigInt : (type.Flags & TypeFlags.BooleanLike) != 0 ? Utf8Literals.Boolean
+            : (type.Flags & TypeFlags.ESSymbolLike) != 0 ? Utf8Literals.Symbol : null;
         if (name is not null)
             return await host.GlobalAsync(name.Value, cancellation).ConfigureAwait(false);
         if ((type.Flags & TypeFlags.NonPrimitive) != 0 || (type.Flags & TypeFlags.Unknown) != 0 && !context.StrictNullChecks)

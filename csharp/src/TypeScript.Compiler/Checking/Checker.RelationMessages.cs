@@ -440,8 +440,8 @@ internal sealed partial class Checker
         Type target,
         CancellationToken cancellation)
     {
-        Utf8String? name = target == context.StringType ? Utf8String.Copy("String"u8) : target == context.NumberType ? Utf8String.Copy("Number"u8)
-            : target == context.BooleanType ? Utf8String.Copy("Boolean"u8) : target == context.ESSymbolType ? Utf8String.Copy("Symbol"u8) : null;
+        Utf8String? name = target == context.StringType ? Utf8Literals.String : target == context.NumberType ? Utf8Literals.Number
+            : target == context.BooleanType ? Utf8Literals.Boolean : target == context.ESSymbolType ? Utf8Literals.Symbol : null;
         if (name is null || source is not ObjectType || source != await program.Globals.GetAsync(name.Value, 0, false, cancellation))
             return diagnostic;
         return diagnostic with

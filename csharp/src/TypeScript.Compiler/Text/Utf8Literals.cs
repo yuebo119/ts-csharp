@@ -24,6 +24,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String Args = "args"u8;
     internal static readonly Utf8String Arguments = "arguments"u8;
     internal static readonly Utf8String Array = "Array"u8;
+    internal static readonly Utf8String ArrayIterator = "ArrayIterator"u8;
     internal static readonly Utf8String ArrayKeyword = "array"u8;
     internal static readonly Utf8String As = " as "u8;
     internal static readonly Utf8String NamespaceImportPrefix = "* as "u8;
@@ -69,6 +70,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String Cjs = ".cjs"u8;
     internal static readonly Utf8String CjsFormat = "cjs"u8;
     internal static readonly Utf8String Class = "class"u8;
+    internal static readonly Utf8String ClassName = "className"u8;
     internal static readonly Utf8String ClassAccessorDecoratorContext = "ClassAccessorDecoratorContext"u8;
     internal static readonly Utf8String ClassAccessorDecoratorResult = "ClassAccessorDecoratorResult"u8;
     internal static readonly Utf8String ClassAccessorDecoratorTarget = "ClassAccessorDecoratorTarget"u8;
@@ -199,6 +201,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String Files = "files"u8;
     internal static readonly Utf8String Finally = " finally "u8;
     internal static readonly Utf8String For = "for"u8;
+    internal static readonly Utf8String HtmlFor = "htmlFor"u8;
     internal static readonly Utf8String ForStatementPrefix = "for ("u8;
     internal static readonly Utf8String ForPrefix = "for "u8;
     internal static readonly Utf8String Force = "force"u8;
@@ -300,6 +303,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String Main = "main"u8;
     internal static readonly Utf8String ManagedHeapWholeProcess = "Managed heap (whole process)"u8;
     internal static readonly Utf8String Map = ".map"u8;
+    internal static readonly Utf8String MapIterator = "MapIterator"u8;
     internal static readonly Utf8String MapUnavailable = "map-unavailable"u8;
     internal static readonly Utf8String MapperDeclaresNoExecutable = "Mapper declares no executable"u8;
     internal static readonly Utf8String MapperInitializeFailed = "Mapper initialize failed"u8;
@@ -431,6 +435,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String See = "see"u8;
     internal static readonly Utf8String Semicolon = ";"u8;
     internal static readonly Utf8String Set = "set"u8;
+    internal static readonly Utf8String SetIterator = "SetIterator"u8;
     internal static readonly Utf8String SetFunctionName = "__setFunctionName"u8;
     internal static readonly Utf8String SetPrefix = "set "u8;
     internal static readonly Utf8String SingleQuote = "'"u8;
@@ -442,6 +447,7 @@ internal static class Utf8Literals
     internal static readonly Utf8String Static = "static"u8;
     internal static readonly Utf8String StaticPrefix = "static "u8;
     internal static readonly Utf8String String = "String"u8;
+    internal static readonly Utf8String StringIterator = "StringIterator"u8;
     internal static readonly Utf8String StringLiteralExpected = "String literal expected."u8;
     internal static readonly Utf8String StringOrArray = "string or Array"u8;
     internal static readonly Utf8String StringKeyword = "string"u8;
