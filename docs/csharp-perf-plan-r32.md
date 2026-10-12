@@ -139,3 +139,7 @@ medium 探针分解（check 179.3 MB 内）：object-literal 族（objectMutable
 
 本方案全新发现（ledger 无记载）：E1/E2/E3/E4、C1、C2、C3、M1、M2、M3、M4、S1、S2、S3、S4、P3-1、P3-2。
 与 ledger 交集及处置：C4（RelationOperation 池化）= 表3 已否，本方案明确不重开；P3-3（扫描器微结构）= 表2 已定界，降级为卫生项；同步化重写 = 表2 已定价，列入明确不做；GC 堆数 = 表2 已否；Utf8String 哈希 = 表2 已否；AST arena = 表2 已否。
+
+## 7. 实施处置（2026-10-12 晚，报告见 `docs/csharp-perf-report-r32.md`）
+
+9 个产品提交。落地：E1/E3/E4、C1/C2/C3、M2/M3、S2/S3、S1（仅旋钮）、P3-2。回退/放弃/推迟：E2（braceMap 喂 `state.Cursor`，gate 改字节，当日回退）、M1（池化缓冲需拷贝，所有权证伪）、M4（`checker-program-safety` 钉死拷贝契约，当日回退）、S4（错误密集型语料缺失，待夹具）、P3-1（真实工程 TLA 0/113，无语料）、P3-3（低于噪声下限 + 取消检查降粒度）。终态：CLR 分配 −22.4%、墙钟 −11.0%、25 夹具逐字节全过、safety 91/95（失败集合 ⊆ 已知基线）。ledger 表1/表2 已同步。

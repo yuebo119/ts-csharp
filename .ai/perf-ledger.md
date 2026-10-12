@@ -21,6 +21,19 @@
 | emit 复用诊断期 checker 池 | `IncrementalProgram.Emit.cs` | r28 F1（medium emit −3.5%，LinkStore creates −23%） |
 | 每文件收尾分桶（未用作用域/重命名绑定/迭代诊断/缺失属性，F2~F5） | `Checker.{Iteration,Source,Access,MissingProperties,Function,Unused}.cs` | r28 |
 | `EmitTextWriter` 单 `Utf8StringBuilder` 全量缓冲、每文件一次写 | 打印器 | r30 §2 取证健康 |
+| r32 批次（`docs/csharp-perf-report-r32.md`，累计 CLR 分配 −22.4%/墙钟 −11.0%） | | |
+| `EmitTextWriter.TrackLineStarts` + atLineStart O(1) 末码点判定 + 逐码点循环 ASCII 快路径 | 打印器 | r32 E1 |
+| 注释路径实例 scratch + 原地压实 + `Comments(ReadOnlySpan)`；`CommentRanges` 静态入口供语言服务 | 打印器 | r32 E4 |
+| `Utf16Length` ASCII 段一次向量化扫描 | source map | r32 E3 |
+| `TypeCacheKey` 六值内联（栈缓冲构建，>6 回落数组） | checker 缓存 | r32 C1 |
+| Apparent/iterator/JSX 建议名走 `Utf8Literals` 缓存静态量 | checker | r32 C2 |
+| `NewSignature` 空类型参数列表共享空 `ReadOnlyCollection` | checker | r32 C3 |
+| `EnvironmentScope`（含三 List）有界池 64 | transform | r32 M2 |
+| `Peek` 40/41 处 static lambda（`Func<Parser,bool>` 重载，缓存委托） | 解析器 | r32 M3 |
+| `Wtf8.DecodeString` ASCII 快路径（单遍转换；span 版 File API .NET 11 不存在已查证） | 文本/文件系统 | r32 S2 |
+| `Utf8StringBuilder.DetachText()` 视图转交（emit writer 末次使用） | 文本/emit | r32 S3 |
+| `TSHARP_PARSE_CONCURRENCY` 环境变量（parse+bind 槽位，默认 4） | 编排 | r32 S1 |
+| JSDoc tag 单遍检测（deprecated/see/link 族一次遍历 + 早退） | 扫描器 | r32 P3-2 |
 
 ## 表2 明确不做（否决必留数据，防下轮重提案）
 
@@ -46,6 +59,13 @@
 | CA1849/CA2012 全量改写（57 处） | 2026-10-11 逐点分类：零真实缺陷（同步纯函数 ~26 处逐个读码验证零阻塞 / runtime-async 桥接 ~16 处 / CTS.Cancel 8 处关闭语义 / 收尾打印 3 处 / 守卫 .Result 2 处）；改写触碰关系链，r27 先例风险（−4 MB 分配换 +2.3% 墙钟）超过全部确定收益。规则降 suggestion，依据在 `csharp/.editorconfig` 段内注释 | 本轮清点日志 + Maybe/Add/Access/Loop/CheckerEnvironment 读码 |
 | 245 容器候选队列 | 2026-10-11 频度分诊执行完毕关账：探针上限临时 16→64 发产品实测（`pkgs/epsl-probe64`），top-64 帧全部有分量帧（帧 #64 仅 28 KB）均属 r26 §1.2 与 r13/r23 已审计家族，无一未审计热帧命中队列站点；队列总值上限 3~4 MB（0.4%，r30 源码定界）< 墙钟分辨率 ±1.5%，单点均值 ~15 KB，修复风险（关系链布局）> 单点价值 2 个数量级。触发条件：量级越界 10× 或新负载类型时重开 | 本轮 top-64 帧表 + r30 §2 |
 | 扫描器内部深挖 | 边界定界关账：解析 summed 0.095 s / 墙钟 1.14 s = 8.3%，扫描器内部 ⊂ 解析；即使 10% 内部优化 < 0.9% 墙钟 < 噪声下限 1.1%，现实预期 <0.5%（与 r30 判断一致）；SearchValues 已用（r20） | 本轮 epsl-a1 实测 + r30 §2 |
+| braceMap 位置数学 gate 在 sourceMap | 前提被证伪：braceMap 不只喂 MapPosition，还喂 `state.Cursor`（Code() 末尾），决定下一次注释扫描起点；gate 后带注释文件发射字节改变（token 间多空格，medium 复现）。MapPosition 无 map 时已 no-op，原实现无浪费 | r32（`docs/csharp-perf-report-r32.md` §3） |
+| NodeList 单分配（池化缓冲免 ToArray） | 所有权分析证伪：池化 List 的缓冲会被下一个列表复用，`ToArray()` 是 AST 长期属主所必需；NodeList 包装器随 AST 永生无法归还。双分配是该设计下限 | r32 §3 |
+| `CheckerDiagnostic.Create` 免参数数组拷贝 | 契约违反：`checker-program-safety` 逐字钉死「调用方可在 Create 后修改传入数组，diagnostic 必须保留原 arguments」。当日回退 | r32 §3 + safety 套件 |
+| parse/bind 默认并发 4→8 | 10 对交错：8 槽 7/10 对占优、中位 −1.6% 墙钟，但 summed parse CPU +45%（builder 共享字典争用），tiny-files −0.6% 噪声带内；信号处于 ±1.5% 批次分辨率边缘。旋钮 `TSHARP_PARSE_CONCURRENCY` 已留，默认 4 | r32 §3 |
+| 诊断分组一次成型（CheckerPool 字典直传 + IncludeDiagnostics HashSet） | 推迟：目标负载（错误/include 密集型诊断）不在测量语料（夹具全 clean），O(文件×诊断) 无对象可测；诊断管线输出顺序敏感。触发条件：错误密集型工程夹具 | r32 §3 |
+| 顶层 await span 级重解析（Go 1:1 移植） | 推迟：真实工程 113 个非声明文件中顶层 await 为 0，收益不可测；语句拼接微妙（扫描器重定位/JSDoc/错误恢复）。触发条件：语料出现 TLA 文件 | r32 §3 |
+| 扫描器微结构三项（标点优先分发/空白向量化/取消检查降频） | 承接上行定界：per-token 取消检查约 1ms（低于噪声两个数量级）且移除降低 Ctrl-C 粒度（语句级无现存检查）；标点优先与空白向量化合计预期 <0.5% 墙钟 | r32 §3 |
 
 ## 表3 勿重开（实施后被证伪回退，翻案须先过前置障碍）
 
@@ -56,4 +76,4 @@
 
 ## 待勘区（未否决、未做完，勿重复立项评估）
 
-2026-10-11 修复轮后无未决项（原三行——CA1849/CA2012 清理、245 容器队列、扫描器内部——已带数据移入表2；三方表刷新已完成）。性能面的重开触发条件：门禁红 / 量级越界 10× / 新负载类型 / SLO 烧穿 / 阶段边界。
+两项待触发器（均已在表2 记录数据与触发条件）：诊断分组一次成型（待错误密集型夹具）、顶层 await span 级重解析（待语料出现 TLA）。另：对 Go 的 AB 批次刷新三方表（r32 终态墙钟 −11%、分配 −22.4% 未入表）。
