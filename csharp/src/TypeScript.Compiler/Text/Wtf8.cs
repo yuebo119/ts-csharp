@@ -101,6 +101,17 @@ public static class Wtf8
 
     internal static string DecodeString(ReadOnlySpan<byte> source, out bool validUtf8)
     {
+        // ASCII paths (the common case for file paths) need no validity pre-scan: one vectorized
+        // check settles it and the conversion is a single pass.
+        if (Ascii.IsValid(source))
+        {
+            validUtf8 = true;
+            return String.Create(source.Length, source, static (destination, origin) =>
+            {
+                for (int i = 0; i < origin.Length; i++)
+                    destination[i] = (char)origin[i];
+            });
+        }
         validUtf8 = Utf8.IsValid(source);
         return validUtf8 ? Encoding.UTF8.GetString(source) : DecodeMalformed(source);
     }

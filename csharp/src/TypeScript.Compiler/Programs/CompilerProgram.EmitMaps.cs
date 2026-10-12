@@ -55,7 +55,9 @@ public sealed partial class CompilerProgram
                 if (mapPath.Length != 0) await WriteAsync(mapPath, generator.ToSourceMap().ToJson(), new(source, 0), outputPath);
             }
             else writer.WriteLine();
-            var text = writer.Text;
+            // Nothing is appended to the writer after this point, so the buffer transfers instead
+            // of copying the whole file content.
+            var text = writer.DetachText();
             if (options.EmitBOM == true) text = "\uFEFF"u8 + text;
             await WriteAsync(outputPath, text, new(source, mapPosition, DiagnosticCollection.SortAndDeduplicate(diagnostics)), outputPath);
         }

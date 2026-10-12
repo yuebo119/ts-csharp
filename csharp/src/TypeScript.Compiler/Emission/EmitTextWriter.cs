@@ -28,6 +28,10 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
     public bool HasTrailingComment { get; private set; }
     public int Column => atLineStart ? Indentation * indentSize : Utf16Length(text.WrittenSpan[lineStart..]);
     public Utf8String Text => text.ToUtf8String();
+
+    // The emit writer is never appended to after the file text is taken, so it can hand its
+    // buffer over instead of copying the whole output.
+    public Utf8String DetachText() => text.DetachText();
     public bool HasTrailingWhitespace => text.Length != 0 && WhiteSpace(Wtf8.DecodeLast(text.WrittenSpan, out _));
 
     private static bool WhiteSpace(int point) => Syntax.TokenFacts.IsWhiteSpace(point) || Syntax.TokenFacts.IsLineBreak(point);

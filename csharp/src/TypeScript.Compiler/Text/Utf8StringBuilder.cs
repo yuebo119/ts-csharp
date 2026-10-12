@@ -84,5 +84,12 @@ internal sealed class Utf8StringBuilder(int capacity = 0)
     }
 
     public Utf8String ToUtf8String() => Utf8String.Copy(WrittenSpan);
+
+    // Hands the written bytes to a new Utf8String without copying, as a view over the (possibly
+    // over-sized) buffer. The caller must guarantee the builder is not appended to afterwards:
+    // an append that fits in the spare capacity would overwrite the detached bytes. The emit
+    // writer takes this route because a file's text is its last use of the builder.
+    public Utf8String DetachText() => new(buffer.AsMemory(0, length));
+
     public override string ToString() => Wtf8.DecodeString(WrittenSpan);
 }
