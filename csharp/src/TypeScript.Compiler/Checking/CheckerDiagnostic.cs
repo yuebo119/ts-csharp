@@ -20,15 +20,10 @@ internal static class CheckerDiagnostic
     }
 
     internal static Diagnostic Create(SyntaxNode? node, DiagnosticMessage message, params Utf8String[] arguments)
-        => CreateOwned(node, message, arguments);
-
-    // Callers hand this a freshly built array (params or collection expression), so the diagnostic
-    // can take ownership instead of paying a second copy per diagnostic.
-    internal static Diagnostic CreateOwned(SyntaxNode? node, DiagnosticMessage message, Utf8String[] arguments)
     {
         var file = SemanticSyntax.Source(node);
         var (start, end) = node is null || file is null ? (0, 0) : ErrorRange(file, node);
-        return new(message, start, end - start, arguments) { FileName = file?.FileName };
+        return new(message, start, end - start, [.. arguments]) { FileName = file?.FileName };
     }
 
     internal static (int Start, int End) TokenRange(SourceFileNode file, int position)
