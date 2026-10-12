@@ -199,6 +199,9 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
         fastCode = map is null && !sourceHasComments;
         commentsDisabled = options.RemoveComments;
         mapsDisabled = sourceFile?.ScriptKind == ScriptKind.JSON;
+        // Line and column are only read by MapPosition, which needs all three of a source, a file
+        // and an enabled map; otherwise the writer keeps just its O(1) line-start state.
+        output.TrackLineStarts = map is not null && sourceFile is not null && !mapsDisabled;
         containerPos = containerEnd = declarationListContainerEnd = -1;
         if (sourceFile is not null && map is not null && !mapsDisabled)
         {
@@ -469,8 +472,11 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
                         LeadingComments(state.Cursor);
                 }
             }
-            var range = state is null ? null : context.GetTokenSourceMapRange(state.Node, scanner.Kind);
-            bool braceMap = state is not null && (matched || range is not null || (state.Node.Flags & NodeFlags.Synthesized) != 0 || context.Original(state.Node) is not null)
+            // Token ranges and brace positions only feed MapPosition, which no-ops without an
+            // enabled source map; the position math below is skipped outright in that case.
+            bool wantMaps = sourceMap is not null && !mapsDisabled;
+            var range = wantMaps && state is not null ? context.GetTokenSourceMapRange(state.Node, scanner.Kind) : null;
+            bool braceMap = wantMaps && state is not null && (matched || range is not null || (state.Node.Flags & NodeFlags.Synthesized) != 0 || context.Original(state.Node) is not null)
                 && scanner.Kind is K.OpenBraceToken or K.CloseBraceToken && !options.OmitBraceSourceMapPositions
                 && (state.Node is JsxExpressionNode or ModuleBlockNode or CaseBlockNode || state.Node is BlockNode
                     && (scanner.Kind == K.CloseBraceToken || !state.FunctionBody));
@@ -770,14 +776,24 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
         if (functionBody && options.PreserveSourceNewlines && (context.GetFlags(block) & EmitFlags.SingleLine) == 0
             && (LeadingLines(block, block.Statements?.FirstOrDefault()) > 0 || ClosingLines(block, block.Statements?.LastOrDefault(), block.Statements?.End ?? -1) > 0))
             singleLine = false;
-        if ((context.GetFlags(block) & EmitFlags.SingleLine) == 0 && block.Statements?.Any(n => (context.GetFlags(n) & EmitFlags.StartOnNewLine) != 0) == true)
-            singleLine = false;
+        if ((context.GetFlags(block) & EmitFlags.SingleLine) == 0 && block.Statements is { } startOnNewLineCheck)
+        {
+            foreach (var statement in startOnNewLineCheck)
+                if ((context.GetFlags(statement) & EmitFlags.StartOnNewLine) != 0)
+                {
+                    singleLine = false;
+                    break;
+                }
+        }
         if (!functionBody)
             return singleLine ? Braces(block.Statements, Utf8Literals.Space, true) : BlockMembers(block.Statements, endComments: true);
         var parts = new List<Part>(3 * (block.Statements?.Count ?? 0) + 10) { new(GenerateNode: block), T("{"u8), new(IndentationChange: 1), new(DetachedPosition: block.Statements?.Pos ?? block.Pos) };
         int offset = AddPrologues(parts, block.Statements);
         parts.Add(new(Helpers: block));
-        singleLine &= offset == 0 && !HelpersFor(block).Any(h => h.Text.Length != 0 || h.TextFactory is not null);
+        if (offset != 0)
+            singleLine = false;
+        else if (HasHelperText(block))
+            singleLine = false;
         if (singleLine)
             parts.Add(new(IndentationChange: -1));
         parts.Add(ListPosition(block.Statements));

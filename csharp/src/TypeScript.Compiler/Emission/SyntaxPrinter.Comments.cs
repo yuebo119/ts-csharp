@@ -36,9 +36,12 @@ public sealed partial class SyntaxPrinter
         bool omitReferences = !elided && position == 0 && sourceFile.IsDeclarationFile;
         if (detachedComments.TryPeek(out var detached) && detached.Pos == position)
             position = detachedComments.Pop().End;
-        var comments = CommentRanges(sourceFile.Source.Text, position, trailing: false)
-            .Where(c => ShouldWrite(c) && (!elided || IsTripleSlash(c)) && (!omitReferences || !IsTripleSlash(c))).ToArray();
-        if (comments.Length != 0 && position != comments[0].Pos && LineOf(position) != LineOf(comments[0].Pos))
+        var ranges = CommentRanges(sourceFile.Source.Text, position, trailing: false);
+        var comments = new List<SourceCommentRange>(ranges.Count);
+        foreach (var comment in ranges)
+            if (ShouldWrite(comment) && (!elided || IsTripleSlash(comment)) && (!omitReferences || !IsTripleSlash(comment)))
+                comments.Add(comment);
+        if (comments.Count != 0 && position != comments[0].Pos && LineOf(position) != LineOf(comments[0].Pos))
             writer.WriteLine();
         return Comments(comments, before: false);
     }
@@ -48,7 +51,11 @@ public sealed partial class SyntaxPrinter
         if (!sourceHasComments || commentsDisabled || sourceFile is null || position < 0 || containerEnd != -1
             && (position == containerEnd || position == declarationListContainerEnd))
             return;
-        var comments = CommentRanges(sourceFile.Source.Text, position, trailing: true).Where(ShouldWrite).ToArray();
+        var ranges = CommentRanges(sourceFile.Source.Text, position, trailing: true);
+        var comments = new List<SourceCommentRange>(ranges.Count);
+        foreach (var comment in ranges)
+            if (ShouldWrite(comment))
+                comments.Add(comment);
         Comments(comments, before: prefixSpace, none: !prefixSpace);
     }
 
@@ -66,7 +73,20 @@ public sealed partial class SyntaxPrinter
             return;
         var leading = CommentRanges(sourceFile.Source.Text, position, trailing: false);
         if (commentsDisabled)
-            leading = position == 0 ? leading.Where(c => sourceFile.Source.Text.Span[c.Pos..].StartsWith("/*!"u8)).ToArray() : [];
+        {
+            if (position == 0)
+            {
+                var retained = new List<SourceCommentRange>();
+                foreach (var comment in leading)
+                    if (sourceFile.Source.Text.Span[comment.Pos..].StartsWith("/*!"u8))
+                        retained.Add(comment);
+                leading = retained;
+            }
+            else
+            {
+                leading = [];
+            }
+        }
         var comments = new List<SourceCommentRange>();
         foreach (var comment in leading)
         {
@@ -78,7 +98,11 @@ public sealed partial class SyntaxPrinter
         {
             if (LineOf(position) != LineOf(comments[0].Pos))
                 writer.WriteLine();
-            Comments(comments.Where(ShouldWrite).ToArray(), before: false);
+            var writable = new List<SourceCommentRange>();
+            foreach (var comment in comments)
+                if (ShouldWrite(comment))
+                    writable.Add(comment);
+            Comments(writable, before: false);
             detachedComments.Push((position, comments[^1].End));
         }
     }

@@ -13,6 +13,17 @@ public sealed partial class SyntaxPrinter
             .OrderBy(helper => helper.Priority is null).ThenBy(helper => helper.Priority);
     }
 
+    // Same answer as HelpersFor(node).Any(text or factory), without the ordering chain: the
+    // BlockBody single-line test only needs to know whether any emitted helper text exists.
+    private bool HasHelperText(SyntaxNode node)
+    {
+        bool skip = options.NoEmitHelpers || sourceFile is not null && context.HasRecordedExternalHelpers(sourceFile);
+        foreach (var helper in context.GetHelpers(node))
+            if ((helper.Scoped || !skip) && (helper.Text.Length != 0 || helper.TextFactory is not null))
+                return true;
+        return false;
+    }
+
     private void WriteHelpers(SyntaxNode node)
     {
         foreach (var helper in HelpersFor(node))
