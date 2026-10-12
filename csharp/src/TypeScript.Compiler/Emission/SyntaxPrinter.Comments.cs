@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using TypeScript.Compiler.Ast;
 using TypeScript.Compiler.Syntax;
 using TypeScript.Compiler.Text;
@@ -27,6 +28,16 @@ public sealed partial class SyntaxPrinter
             || text.Span.StartsWith("<amd-module"u8);
     }
 
+    private readonly List<SourceCommentRange> commentScratch = [];
+
+    private List<SourceCommentRange> ScanComments(Utf8String text, int position, bool trailing)
+    {
+        var scratch = commentScratch;
+        scratch.Clear();
+        ScanCommentRanges(text, position, trailing, scratch);
+        return scratch;
+    }
+
     private bool LeadingComments(int position, bool elided = false)
     {
         // A source with no comment markers cannot yield a source comment, so the range scan (and the
@@ -36,12 +47,16 @@ public sealed partial class SyntaxPrinter
         bool omitReferences = !elided && position == 0 && sourceFile.IsDeclarationFile;
         if (detachedComments.TryPeek(out var detached) && detached.Pos == position)
             position = detachedComments.Pop().End;
-        var ranges = CommentRanges(sourceFile.Source.Text, position, trailing: false);
-        var comments = new List<SourceCommentRange>(ranges.Count);
-        foreach (var comment in ranges)
+        var ranges = ScanComments(sourceFile.Source.Text, position, trailing: false);
+        int keep = 0;
+        for (int i = 0; i < ranges.Count; i++)
+        {
+            var comment = ranges[i];
             if (ShouldWrite(comment) && (!elided || IsTripleSlash(comment)) && (!omitReferences || !IsTripleSlash(comment)))
-                comments.Add(comment);
-        if (comments.Count != 0 && position != comments[0].Pos && LineOf(position) != LineOf(comments[0].Pos))
+                ranges[keep++] = comment;
+        }
+        var comments = CollectionsMarshal.AsSpan(ranges)[..keep];
+        if (comments.Length != 0 && position != comments[0].Pos && LineOf(position) != LineOf(comments[0].Pos))
             writer.WriteLine();
         return Comments(comments, before: false);
     }
@@ -51,12 +66,12 @@ public sealed partial class SyntaxPrinter
         if (!sourceHasComments || commentsDisabled || sourceFile is null || position < 0 || containerEnd != -1
             && (position == containerEnd || position == declarationListContainerEnd))
             return;
-        var ranges = CommentRanges(sourceFile.Source.Text, position, trailing: true);
-        var comments = new List<SourceCommentRange>(ranges.Count);
-        foreach (var comment in ranges)
-            if (ShouldWrite(comment))
-                comments.Add(comment);
-        Comments(comments, before: prefixSpace, none: !prefixSpace);
+        var ranges = ScanComments(sourceFile.Source.Text, position, trailing: true);
+        int keep = 0;
+        for (int i = 0; i < ranges.Count; i++)
+            if (ShouldWrite(ranges[i]))
+                ranges[keep++] = ranges[i];
+        Comments(CollectionsMarshal.AsSpan(ranges)[..keep], before: prefixSpace, none: !prefixSpace);
     }
 
     private void ListComments(int position)
@@ -64,7 +79,7 @@ public sealed partial class SyntaxPrinter
         if (!sourceHasComments || commentsDisabled || sourceFile is null || position < 0 || containerEnd != -1
             && (position == containerEnd || position == declarationListContainerEnd))
             return;
-        Comments(CommentRanges(sourceFile.Source.Text, position, trailing: true), before: false);
+        Comments(CollectionsMarshal.AsSpan(ScanComments(sourceFile.Source.Text, position, trailing: true)), before: false);
     }
 
     private void DetachedComments(int position)
@@ -102,14 +117,14 @@ public sealed partial class SyntaxPrinter
             foreach (var comment in comments)
                 if (ShouldWrite(comment))
                     writable.Add(comment);
-            Comments(writable, before: false);
+            Comments(CollectionsMarshal.AsSpan(writable), before: false);
             detachedComments.Push((position, comments[^1].End));
         }
     }
 
-    private bool Comments(IReadOnlyList<SourceCommentRange> comments, bool before, bool none = false)
+    private bool Comments(ReadOnlySpan<SourceCommentRange> comments, bool before, bool none = false)
     {
-        if (comments.Count == 0)
+        if (comments.Length == 0)
             return false;
         if (before && !writer.AtLineStart && !writer.HasTrailingWhitespace)
             writer.Write(" "u8);
@@ -197,6 +212,12 @@ public sealed partial class SyntaxPrinter
     internal static IReadOnlyList<SourceCommentRange> CommentRanges(Utf8String text, int position, bool trailing)
     {
         var comments = new List<SourceCommentRange>();
+        ScanCommentRanges(text, position, trailing, comments);
+        return comments;
+    }
+
+    private static void ScanCommentRanges(Utf8String text, int position, bool trailing, List<SourceCommentRange> comments)
+    {
         bool collecting = trailing || position == 0;
         SourceCommentRange? pending = null;
         if (position == 0 && text.Span.StartsWith("#!"u8))
@@ -259,6 +280,5 @@ public sealed partial class SyntaxPrinter
         }
         if (pending is { } last)
             comments.Add(last);
-        return comments;
     }
 }

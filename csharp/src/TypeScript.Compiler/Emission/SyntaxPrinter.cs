@@ -472,11 +472,8 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
                         LeadingComments(state.Cursor);
                 }
             }
-            // Token ranges and brace positions only feed MapPosition, which no-ops without an
-            // enabled source map; the position math below is skipped outright in that case.
-            bool wantMaps = sourceMap is not null && !mapsDisabled;
-            var range = wantMaps && state is not null ? context.GetTokenSourceMapRange(state.Node, scanner.Kind) : null;
-            bool braceMap = wantMaps && state is not null && (matched || range is not null || (state.Node.Flags & NodeFlags.Synthesized) != 0 || context.Original(state.Node) is not null)
+            var range = state is null ? null : context.GetTokenSourceMapRange(state.Node, scanner.Kind);
+            bool braceMap = state is not null && (matched || range is not null || (state.Node.Flags & NodeFlags.Synthesized) != 0 || context.Original(state.Node) is not null)
                 && scanner.Kind is K.OpenBraceToken or K.CloseBraceToken && !options.OmitBraceSourceMapPositions
                 && (state.Node is JsxExpressionNode or ModuleBlockNode or CaseBlockNode || state.Node is BlockNode
                     && (scanner.Kind == K.CloseBraceToken || !state.FunctionBody));
