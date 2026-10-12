@@ -79,11 +79,12 @@ medium 夹具（67 文件/8,140 行）：CLR 分配 79.51 → 79.08 MB（−0.5%
 
 ## 5. 门禁状态（终态）
 
+门禁脚本（`built/` 为 gitignored 目录，沿用 epsl-a1-bytecheck.mjs 惯例；如遗失按本报告口径重建）：`built/r32-bytecheck.mjs`（5 夹具 before/after）、`built/r32-bytecheck-full.mjs`（25 夹具 + latestChangedDtsFile 归一化）、`built/r32-determinism.mjs`（before 二进制自确定性探针）。
+
 | 门禁 | 结果 |
 | --- | --- |
 | Release 构建 0 警告 0 错误（含 analyzer 段） | 绿（每次提交前 --no-incremental 重建） |
-| 逐字节 25 夹具（seg/staged/huge-file/real-project，退出码+stdout+全树哈希） | **25/25**；real-project 的 tsbuildinfo 曾仅 `latestChangedDtsFile` 不同（并行 emit 完成顺序的计时字段，冷跑下两侧一致），门禁脚本已对该字段归一化并输出 NOTE |
-| safety 95 flags | **91/95**，4 失败（checker-relation-context / program-emit / developer / lsp-native-watch）全部属于 r22 以来已知基线集合；npm-process 本轮通过（环境波动项） |
+| 逐字节 25 夹具（seg/staged/huge-file/real-project，退出码+stdout+全树哈希） | **25/25**；real-project 的 tsbuildinfo 曾仅 `latestChangedDtsFile` 不同（并行 emit 完成顺序的计时字段，冷跑下两侧一致），门禁脚本已对该字段归一化并输出 NOTE || safety 95 flags | **91/95**，4 失败（checker-relation-context / program-emit / developer / lsp-native-watch）全部属于 r22 以来已知基线集合；npm-process 本轮通过（环境波动项） |
 | 分配 | 真实工程 −22.4%（确定性，3 组带宽 <0.1 MB） |
 | 墙钟 | 真实工程 −11.0%（3 组）；huge-file 4 对交错 −1.2%；medium 无差异 |
 
