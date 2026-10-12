@@ -178,7 +178,7 @@ public sealed partial class CompilerProgram
     internal ProgramFile? GetFileByPath(Utf8String path) => files.GetValueOrDefault(path);
 
     public static ValueTask<CompilerProgram> CreateAsync(IFileSystem fileSystem, Utf8String currentDirectory, ParsedConfig config,
-        CompilerProgram? previous = null, bool useProjectReferenceSources = false, int concurrency = 4,
+        CompilerProgram? previous = null, bool useProjectReferenceSources = false, int concurrency = -1,
         Utf8String? defaultLibraryDirectory = null, ContentMapperProject? mapperProject = null, CancellationToken cancellation = default,
         Utf8String globalTypingsCache = default, bool skipModuleResolution = false) =>
         new Builder(
@@ -187,10 +187,16 @@ public sealed partial class CompilerProgram
             config,
             previous,
             useProjectReferenceSources,
-            concurrency,
+            concurrency < 0 ? DefaultParseConcurrency() : concurrency,
             defaultLibraryDirectory,
             mapperProject,
             cancellation, globalTypingsCache, skipModuleResolution).Build();
+
+    // Parse and bind share one slot per file; the default keeps the historical cap while
+    // TSHARP_PARSE_CONCURRENCY allows an A/B over wider caps.
+    private static int DefaultParseConcurrency() =>
+        int.TryParse(Environment.GetEnvironmentVariable("TSHARP_PARSE_CONCURRENCY"), out int configured) && configured > 0
+            ? configured : 4;
 
     private sealed partial class Builder
     {
