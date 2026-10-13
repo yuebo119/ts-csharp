@@ -54,7 +54,11 @@ internal static class AllocationProbes
     // Inside the recursive-session body: the deep-nesting check and the structured-comparison callback.
     internal const int RecDeep = 37;
     internal const int RecStamp = 38;
-    internal const int Count = 39;
+    // Emit-side buffer growth: every Array.Resize inside Utf8StringBuilder.Reserve. The old buffer
+    // was already charged when first allocated, so this frame's inclusive bytes approximate the
+    // doubling overhead of one builder's lifetime (~2x the final text size).
+    internal const int EmitBufferGrow = 39;
+    internal const int Count = 40;
 
     internal static readonly string[] Names =
     [
@@ -67,5 +71,6 @@ internal static class AllocationProbes
         "ctxElement", "ctxProperties", "propertyLookup", "ctxApparent",
         "relNormalize", "relSimple", "relWeak", "relIdentical", "relUnion", "relRecurse", "relKeys",
         "recDeep", "recStamp",
+        "emitBufferGrow",
     ];
 }

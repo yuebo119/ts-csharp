@@ -25,7 +25,17 @@ internal sealed class Utf8StringBuilder(int capacity = 0)
     {
         int required = checked(Length + length);
         if (required > buffer.Length)
-            Array.Resize(ref buffer, Math.Max(required, Math.Max(buffer.Length * 2, 32)));
+        {
+            Diagnostics.CompilationCapture.ProbeMark mark = Diagnostics.CompilationCapture.Mark();
+            try
+            {
+                Array.Resize(ref buffer, Math.Max(required, Math.Max(buffer.Length * 2, 32)));
+            }
+            finally
+            {
+                Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.EmitBufferGrow, mark);
+            }
+        }
         return buffer.AsSpan(Length);
     }
 

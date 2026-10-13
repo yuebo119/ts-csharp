@@ -63,7 +63,7 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
         if ((type.Flags & (F.InstantiableNonPrimitive | F.UnionOrIntersection | F.TemplateLiteral | F.StringMapping | F.Index)) == 0
             && !IsGenericTuple(type))
             return null;
-        var result = await ResolvedBaseAsync(type, [], cancellation).ConfigureAwait(false);
+        var result = await ResolvedBaseAsync(type, default, cancellation).ConfigureAwait(false);
         return IsAbsent(result) ? null : result;
     }
 
@@ -71,12 +71,12 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
         => await BaseConstraintAsync(type, cancellation).ConfigureAwait(false) ?? type;
 
     internal async ValueTask<bool> HasNonCircularConstraintAsync(Type type, CancellationToken cancellation = default)
-        => await ResolvedBaseAsync(type, [], cancellation).ConfigureAwait(false) != context.CircularConstraintType;
+        => await ResolvedBaseAsync(type, default, cancellation).ConfigureAwait(false) != context.CircularConstraintType;
 
     private bool IsAbsent(Type type) => type == context.NoConstraintType || type == context.CircularConstraintType;
 
     internal ValueTask<Type> ResolvedBaseConstraintAsync(Type type, CancellationToken cancellation = default)
-        => ResolvedBaseAsync(type, [], cancellation);
+        => ResolvedBaseAsync(type, default, cancellation);
 
     internal async ValueTask<Type?> ConstraintAsync(Type type, CancellationToken cancellation = default)
     {
@@ -192,7 +192,40 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
         return type.ResolvedConstraintOfDistributive == context.NoConstraintType ? null : type.ResolvedConstraintOfDistributive;
     }
 
-    private async ValueTask<Type> ResolvedBaseAsync(Type type, IReadOnlyList<RecursionIdentity> stack, CancellationToken cancellation)
+    // The recursion identities of one constraint exploration form a depth-first stack: every level
+    // reads only [0, its own depth) and the checker's await flow never interleaves two explorations,
+    // so a single per-checker buffer replaces the per-level array snapshot. The depth budget below
+    // caps the stack at 50 entries, so the initial capacity never grows; if it ever did, ancestor
+    // views into the old buffer stay valid because they never read at or beyond their own depth.
+    private RecursionIdentity[] recursionIdentities = new RecursionIdentity[64];
+
+    private readonly struct RecursionStack(RecursionIdentity[] identities, int count)
+    {
+        internal int Count => count;
+
+        internal bool Contains(RecursionIdentity identity)
+        {
+            for (int i = 0; i < count; i++)
+                if (identities[i] == identity)
+                    return true;
+            return false;
+        }
+    }
+
+    private RecursionStack Push(RecursionStack stack, RecursionIdentity identity)
+    {
+        var buffer = recursionIdentities;
+        if (stack.Count == buffer.Length)
+        {
+            var grown = new RecursionIdentity[buffer.Length * 2];
+            buffer.AsSpan(0, stack.Count).CopyTo(grown);
+            recursionIdentities = buffer = grown;
+        }
+        buffer[stack.Count] = identity;
+        return new(buffer, stack.Count + 1);
+    }
+
+    private async ValueTask<Type> ResolvedBaseAsync(Type type, RecursionStack stack, CancellationToken cancellation)
     {
         await Task.CompletedTask.ConfigureAwait(RuntimeHelpers.TryEnsureSufficientExecutionStack()
             ? ConfigureAwaitOptions.None : ConfigureAwaitOptions.ForceYielding);
@@ -212,10 +245,7 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
             // These are the reference's constraint exploration budgets, not native stack limits.
             if (stack.Count < 10 || stack.Count < 50 && !stack.Contains(identity))
             {
-                var next = new RecursionIdentity[stack.Count + 1];
-                for (int i = 0; i < stack.Count; i++)
-                    next[i] = stack[i];
-                next[^1] = identity;
+                var next = Push(stack, identity);
                 var simplified = await host.SimplifyAsync(type, false, cancellation).ConfigureAwait(false);
                 constraint = await ComputeBaseAsync(simplified, next, cancellation).ConfigureAwait(false);
             }
@@ -235,7 +265,7 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
         return constrained.ResolvedBaseConstraint ??= constraint;
     }
 
-    private async ValueTask<Type?> NextBaseAsync(Type? type, IReadOnlyList<RecursionIdentity> stack, CancellationToken cancellation)
+    private async ValueTask<Type?> NextBaseAsync(Type? type, RecursionStack stack, CancellationToken cancellation)
     {
         if (type is null)
             return null;
@@ -243,7 +273,7 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
         return IsAbsent(result) ? null : result;
     }
 
-    private async ValueTask<Type?> ComputeBaseAsync(Type type, IReadOnlyList<RecursionIdentity> stack, CancellationToken cancellation)
+    private async ValueTask<Type?> ComputeBaseAsync(Type type, RecursionStack stack, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
         switch (type)
