@@ -1,0 +1,19 @@
+# 构建输出
+bin/
+obj/
+artifacts/
+built/
+
+# Node
+node_modules/
+
+# 增量状态与探针
+*.tsbuildinfo
+probeout/
+freshalloc/
+
+# 本地工具状态
+.mimocode/
+.serena/
+.cortex/
+.ai/brain-data/
