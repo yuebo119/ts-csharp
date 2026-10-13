@@ -69,6 +69,16 @@
 - 每个负载在 `bench/<批次>/<负载>/{go,csharp}/` 各有一份夹具；**tsconfig 与源码必须逐字节相同**（已核验 medium/huge-file/declarations）；
 - 批次 `summary.json` 的 `inputsSha256` 记录夹具内容校验值，可用于事后确认两侧输入一致。
 
+### 7.1 增量状态文件陷阱（r34 实测，2026-10-13）
+
+`composite: true` 的夹具（真实工程）会把增量状态写到 **`<outDir>/../<配置名>.tsbuildinfo`**（源码 `Incremental/BuildInfo.Options.cs`：`GetBuildInfoFileName` 用 outDir 重算配置路径）。后果：
+
+- `--outDir /tmp/xxx` 的多次运行共享同一个 `/tmp/tsconfig.tsbuildinfo`；**删夹具根的 `tsconfig.tsbuildinfo` 不挡它**。第一次运行全量 check 并写状态，之后运行恢复状态、跳过 check（实测 check 时间 1.9s → 0.000s，分配 1,005 MB → 371 MB），产出仍是全量 emit。历史真实工程分配数字（371.0 / 521.5 / 465.8 MB 与 r33 的 374 MB）全部是这一恢复态。
+- `--outDir` 用项目内相对路径时状态文件落在夹具根，删它即可回到全量态。
+- **每次测量前必须删掉当次 outDir 的兄弟状态文件**（或直接用项目内 outDir + 删夹具根状态文件）；用 `--incremental false` 也可完全避开。
+- 另注意 `--extendedDiagnostics` 统计里的 `GC.GetTotalMemory(forceFullCollection: true)` 会强制一次全量 GC，使"GC pause time"读数从自然值（全量态实测 81.5 ms）抬到 0.22~0.24 s；比较停顿必须不带该旗标。
+
+
 ## 8. 一次标准测量的命令模板
 
 ```powershell

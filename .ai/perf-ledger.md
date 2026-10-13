@@ -34,6 +34,12 @@
 | `Utf8StringBuilder.DetachText()` 视图转交（emit writer 末次使用） | 文本/emit | r32 S3 |
 | `TSHARP_PARSE_CONCURRENCY` 环境变量（parse+bind 槽位，默认 4） | 编排 | r32 S1 |
 | JSDoc tag 单遍检测（deprecated/see/link 族一次遍历 + 早退） | 扫描器 | r32 P3-2 |
+| r34 批次（`docs/csharp-perf-report-r34.md`，对象字面量上下文路径分配削减；配对 A/B：真实工程 −0.39%/medium −6.30%/huge-file −2.88%） | | |
+| 上下文查询 spread 边界单遍循环（替 LINQ 链的 4 迭代器 + 2 数组） | `ExpressionContexts.GetAsync` | r34 F1 |
+| `LiteralAsync` 非复合非实例化上下文一次旗标判定（避 Stack 分配） | `ExpressionContexts` | r34 F2 |
+| `WidenLiteralAsync` 唯一符号加宽按联合与否分流（非联合免 MapAsync 闭包） | `ExpressionContexts` | r34 F3 |
+| 对象字面量 `IndexInfo` 列表惰性构建（仅计算属性名需要） | `ObjectLiterals.CreateAsync` | r34 F4 |
+| 数字字面量语法检查复用单个 Scanner（Reset 而非 new） | `Checker.LiteralGrammar` | r34 F5 |
 
 ## 表2 明确不做（否决必留数据，防下轮重提案）
 
@@ -60,9 +66,9 @@
 | 245 容器候选队列 | 2026-10-11 频度分诊执行完毕关账：探针上限临时 16→64 发产品实测（`pkgs/epsl-probe64`），top-64 帧全部有分量帧（帧 #64 仅 28 KB）均属 r26 §1.2 与 r13/r23 已审计家族，无一未审计热帧命中队列站点；队列总值上限 3~4 MB（0.4%，r30 源码定界）< 墙钟分辨率 ±1.5%，单点均值 ~15 KB，修复风险（关系链布局）> 单点价值 2 个数量级。触发条件：量级越界 10× 或新负载类型时重开 | 本轮 top-64 帧表 + r30 §2 |
 | 扫描器内部深挖 | 边界定界关账：解析 summed 0.095 s / 墙钟 1.14 s = 8.3%，扫描器内部 ⊂ 解析；即使 10% 内部优化 < 0.9% 墙钟 < 噪声下限 1.1%，现实预期 <0.5%（与 r30 判断一致）；SearchValues 已用（r20） | 本轮 epsl-a1 实测 + r30 §2 |
 | braceMap 位置数学 gate 在 sourceMap | 前提被证伪：braceMap 不只喂 MapPosition，还喂 `state.Cursor`（Code() 末尾），决定下一次注释扫描起点；gate 后带注释文件发射字节改变（token 间多空格，medium 复现）。MapPosition 无 map 时已 no-op，原实现无浪费 | r32（`docs/csharp-perf-report-r32.md` §3） |
-| no-GC region（`GC.TryStartNoGCRegion`） | 产品配置（烤制 Server GC + DATAS 关）下实测证伪：真实工程 374MB 分配全程 **0.0ms 停顿、仅 1 次 gen0**——Server GC 的 gen0 预算足够大，第二次 collection 根本不触发；AOT 产品配对 596 vs 579ms（噪声内），而 1GiB 预留给 --version 稳定 +20ms。当日回退。**关键修正：r26 以来「GC 停顿占墙钟 10~20%」是 method.md 工作站 GC 测量环境（DOTNET_gcServer=0 强制 24 次 gen0）的产物，产品配置下停顿≈0**——后续轮次勿再把停顿当差距来源 | r33（`docs/csharp-perf-report-r33.md` 实验1） |
+| no-GC region（`GC.TryStartNoGCRegion`） | **r34 复测再否决**（推翻 r33 的否决前提，但结论不变）：r33 的「产品配置 0.0ms 停顿」测于 check 恢复态（374MB 家族，method.md §7.1）；全量 check 态实测停顿 81.5ms、gen0 3 次，region（2048MB）可压到 3.9ms 且编译期零 collection。但 ① 停顿与并行 checker 重叠：全量负载墙钟 10 对中位仅 −0.90%（低于 1.1% 噪声下限，判不可分辨）；② `--version` 51.1→109.2ms（+113%，击穿启动类预算）；③ 峰值 RSS 826→945MB（+14%）。当日回退。**「产品配置不触发 GC」表述作废；「停顿不是墙钟差距主因」因并行重叠仍成立** | r34（`docs/csharp-perf-report-r34.md` §4） |
 | R2R 自包含（动态 PGO + 分层编译）替代 NativeAOT | 实测慢 2~2.6 倍：medium 454 vs 237ms、huge-file 1664 vs 640ms（AOT，配对）。AOT 全优化码生成胜过 R2R+PGO 的稳态收益，JIT 热在此类短命进程 Warmup 成本压倒性。NativeAOT 形态保持 | r33 实验3 |
-| gen0 预算 pin / GCLatencyMode.SustainedLowLatency |  moot：产品配置下 GC 根本不触发（见 no-GC region 行），预算与延迟模式无作用对象 | r33 实验2/4 |
+| gen0 预算 pin / GCLatencyMode.SustainedLowLatency |  moot：全量态 GC 触发但停顿与并行工作重叠（见 no-GC region 行，r34 修正），预算与延迟模式无可测作用对象；复测前提（恢复态零停顿）已作废，若重提案须在全量态配对 | r33 实验2/4（r34 修正前提） |
 | parse/bind 槽位默认 4→8 | 产品配置下实测反向：真实工程 5 对交错 c4 中位 616ms vs c8 650ms（−5.2%），builder 共享字典争用超过并行收益。此前 JIT+工作站 GC 下的「8 槽 −1.6%」同属环境假象。旋钮 `TSHARP_PARSE_CONCURRENCY` 保留，默认 4 确认 | r33 实验4 |
 | NodeList 单分配（池化缓冲免 ToArray） | 所有权分析证伪：池化 List 的缓冲会被下一个列表复用，`ToArray()` 是 AST 长期属主所必需；NodeList 包装器随 AST 永生无法归还。双分配是该设计下限 | r32 §3 |
 | `CheckerDiagnostic.Create` 免参数数组拷贝 | 契约违反：`checker-program-safety` 逐字钉死「调用方可在 Create 后修改传入数组，diagnostic 必须保留原 arguments」。当日回退 | r32 §3 + safety 套件 |

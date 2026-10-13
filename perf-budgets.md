@@ -15,6 +15,8 @@
 
 夹具态注记（2026-10-13，r32-comparison）：r28 时代后夹具根 `dist/` 曾丢失导致 `#enums/*` 导入全部 TS2307、文件图不完整（291 文件的破损态）；本会话用产品自举重建 `dist/` 修复。历史分配数字（866.0/811.5 MB）测于旧夹具态，与现行 326 文件态的数字不可直接比较；`@types/node` 现由仓库根 workspace node_modules 提供（22.20.1）。
 
+分配口径注记（2026-10-13，r34）：旧锚点 371.0/521.5/465.8 MB 三节点数字全部测于 **check 恢复态**（`--outDir` 兄弟状态文件被后续运行读取，check 跳过、仅 emit；同程序全量态为 1,005.1 MB，r34 实测复现）。三节点间的相对关系仍有效（同态对比），但绝对值不是全量编译成本；现行门禁按全量态计量，陷阱细节与规避方法见 `docs/csharp-perf-method.md` §7.1。
+
 量级越界 10×（EPSL §4.1）触发节点化地毯审计；夹具两侧 tsconfig 与源码必须逐字节相同（method.md §7）。
 
 ## 2. SLO 预算（防回潮线，非冲刺目标）
@@ -23,14 +25,14 @@
 
 | 指标 | 预算【草案】 | 锚点实测 | 测量口径 |
 | --- | --- | --- | --- |
-| 真实工程 CLR 总分配 | ≤ 480 MB（现行夹具态重设；旧线 ≤820 MB 测于旧夹具态，见 §1 注记） | 371.0 MB（r32；同态 naot-svr 521.5 / epsl-a1 465.8，r32 累计 −28.9%） | `--extendedDiagnostics` 分阶段分配求和，同夹具态全新 outDir 无增量状态，交错 ≥3 组，带宽 <0.5 MB 才有效 |
+| 真实工程 CLR 总分配 | ≤ 1,050 MB（全量 check + emit 口径，r34 重设；旧线 ≤480 MB 测于 check 恢复态，见 §1 注记） | 1,001.7 MB（r34a 全量态，r32 同程序 1,005.1 MB，−0.34%） | 单行 `CLR allocated bytes`（进程总量），同夹具态、**删 outDir 兄弟状态文件**、交错 ≥3 组、带宽 <0.5 MB 才有效（method.md §7.1） |
 | 分配相对 Go | 待 Go 侧重测后重设（旧锚 x5.2 测于旧夹具态 + r15 口径 Go 峰值，现不可直接除） | — | 同上 + Go 侧 GOGC=off |
 | 重负载墙钟平均（11 负载族）对 Go 默认 | ≤ x1.50 | x1.397（r32 表 AB126b；r28 表 x1.428） | 同批配对中位比值；控制组 medianRatio CI 含 1.0 |
 | 最差单负载 medium-checkers-1 | ≤ x2.20 | x1.943（r32 表 AB126b；r28 表 x2.009） | 同上 |
 | 巨文件 | ≤ x1.55 | x1.368（r32 表 AB126b；r28 表 x1.425） | 同上 |
 | 启动类负载（version/help/empty-project） | ≤ x1.35 | x1.18~1.27（55 ms Main 前地板，substrate 差距，r30 定论不可修） | 同上 |
 | 产物等价 | 逐字节 100%（25 夹具） | 25/25（r27d/r28） | 退出码 + stdout + 发射文件哈希 |
-| safety 套件 | ≥ 90/95 且失败集合 = 已知基线集合 | 90/95（npm-process 为已知环境态） | docs 轮次报告口径 |
+| safety 套件 | ≥ 90/95 且失败集合 ⊆ 已知基线集合 | 92/95（失败 = checker-relation-context / npm-process / program-emit，均在基线内） | docs 轮次报告口径 |
 | 构建红线 | Release 0 警告 0 错误（含 analyzer 段与 AOT 验证） | 0/0（r28） | `csharp/` 下 `dotnet build TypeScript.slnx -c Release` |
 
 已知例外（不算回潮）：tiny-files-noemit 对自身基准 −12.8%（r18 DATAS 关闭的既有代价，换重负载 14~31% 的已接受取舍；r32 表 AB128 CI [1.05, 1.09]）。
@@ -53,9 +55,13 @@
 | 测量配置：工作站 GC / gen0 4 MiB / LOH 1 MiB | `docs/csharp-perf-method.md` §6（权威，不在此重复） | 各带实测数字。**注意（r33 修正）：该环境的 GC 行为与产品配置截然不同——工作站 GC 下真实工程 24 次 gen0、停顿 ~190ms；产品配置（Server GC）下同样负载全程 0.0ms 停顿、仅 1 次 gen0。跨环境搬运 GC 相关结论会失真，墙钟对比一律用产品配置（--no-gc-env）** |
 | GC 堆数（HeapCount 4/8） | r31 双臂否决（表2） | 配置面已清零；r33 追加证实产品配置下停顿≈0，堆数/预算/延迟模式/latency 均无作用对象 |
 
-## 4.1 GC 停顿前提修正（r33，2026-10-13）
+## 4.1 GC 停顿前提修正（r33，2026-10-13；r34 再修正）
 
-r26 以来多份文档引用「GC 停顿占墙钟 10~20%」。r33 在产品自身配置（烤制 Server GC + DATAS 关）下复测：真实工程 374MB 分配、huge-file 371MB 分配，**GC pause time 均为 0.0ms，gen0 collection 各 1 次**（该 1 次发生在运行早期，之后整个编译不再触发 collection）。原 10~20% 数字测自 method.md §6 的工作站 GC 环境（`DOTNET_gcServer=0` 强制 24 次 gen0、~190ms 停顿），**不是产品行为**。结论：剩余对 Go 的差距是纯每操作 CPU 常数，分配削减只经分配器 CPU 与缓存局部性起作用，不经停顿。
+r26 以来多份文档引用「GC 停顿占墙钟 10~20%」。r33 在产品自身配置（烤制 Server GC + DATAS 关）下复测并宣布该数字是工作站 GC 测量环境的产物（产品配置「0.0ms 停顿、1 次 gen0」）。**r34 证明 r33 的复测本身落在 check 恢复态**（374 MB 分配正是恢复态家族，method.md §7.1），结论对全量负载不成立：
+
+- 全量 check + emit（326 文件、状态文件已删、不带 `--extendedDiagnostics`）：进程 GC pause **81.5 ms**、gen0 3 次 / gen1 2 次 / gen2 2 次；带 `--extendedDiagnostics` 时其强制全量 GC 把读数抬到 0.22~0.24 s。
+- 但停顿几乎不与墙钟竞争：no-GC region 把停顿压到 3.9 ms，全量负载墙钟中位仅 −0.90%（10 对，低于 1.1% 噪声下限，判不可分辨）——Server GC 的停顿大部分与并行 checker 工作重叠。剩余对 Go 的差距主体仍是每操作 CPU 常数，此结论不变，但「产品配置不触发 GC」的表述作废。
+- no-GC region 复测（r34，含 `TSHARP_NO_GC_REGION_MB` 旋钮默认 2048 MB）：重负载收益不可分辨，`--version` 51.1 → 109.2 ms（+113%，击穿 §2 启动类预算），峰值 RSS 826 → 945 MB（+14%）。**否决**，ledger 表2 已更新该行。
 
 ## 5. 明确不做
 
