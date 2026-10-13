@@ -50,8 +50,12 @@
 | 决策 | 位置 | 依据 |
 | --- | --- | --- |
 | 产品：Server GC 编译期启用 + DATAS 关闭 | `GarbageCollectionAdaptationMode=0`（r18） | 重负载再快 14~31%；代价见 §2 已知例外 |
-| 测量配置：工作站 GC / gen0 4 MiB / LOH 1 MiB | `docs/csharp-perf-method.md` §6（权威，不在此重复） | 各带实测数字 |
-| 唯一未测旋钮：GC 堆数 | r31 首选候选（r30 扫描定论） | 16 核默认堆数=核数，负载仅 8 checker；停顿占墙钟 10~20%（r26） |
+| 测量配置：工作站 GC / gen0 4 MiB / LOH 1 MiB | `docs/csharp-perf-method.md` §6（权威，不在此重复） | 各带实测数字。**注意（r33 修正）：该环境的 GC 行为与产品配置截然不同——工作站 GC 下真实工程 24 次 gen0、停顿 ~190ms；产品配置（Server GC）下同样负载全程 0.0ms 停顿、仅 1 次 gen0。跨环境搬运 GC 相关结论会失真，墙钟对比一律用产品配置（--no-gc-env）** |
+| GC 堆数（HeapCount 4/8） | r31 双臂否决（表2） | 配置面已清零；r33 追加证实产品配置下停顿≈0，堆数/预算/延迟模式/latency 均无作用对象 |
+
+## 4.1 GC 停顿前提修正（r33，2026-10-13）
+
+r26 以来多份文档引用「GC 停顿占墙钟 10~20%」。r33 在产品自身配置（烤制 Server GC + DATAS 关）下复测：真实工程 374MB 分配、huge-file 371MB 分配，**GC pause time 均为 0.0ms，gen0 collection 各 1 次**（该 1 次发生在运行早期，之后整个编译不再触发 collection）。原 10~20% 数字测自 method.md §6 的工作站 GC 环境（`DOTNET_gcServer=0` 强制 24 次 gen0、~190ms 停顿），**不是产品行为**。结论：剩余对 Go 的差距是纯每操作 CPU 常数，分配削减只经分配器 CPU 与缓存局部性起作用，不经停顿。
 
 ## 5. 明确不做
 
