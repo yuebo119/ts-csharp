@@ -2,6 +2,7 @@
 
 > 建账 2026-10-11（EPSL 接入）。防重复提案的单一事实源：提任何性能建议前先比对三表；表2 否决必带分解数据，表3 翻案须先解决记载的前置障碍。
 > 每行标注轮次与文档锚点（`docs/csharp-perf-*`）。轮次报告是原始证据，本账本是索引与裁决记录；冲突时以轮次报告为准并回改本表。
+> **测量协议注记（r34，2026-10-13）**：批次已改分层制（`docs/csharp-perf-method.md` §9，harness `--tier decision|table`）。每轮产品改动只跑 decision 层 7 行且必须 latest-vs-previous 同批；23 行全量 + Go@400 + 基线批只在用户要对比表时跑。8 行已退役（project-references 缩到 2 行代表、medium-checkers 只留 1 和默认、help 并入 version、256m 按需），新表须带退役注记。
 
 ## 表1 已充分利用特性（已用，勿再建议"引入"）
 
