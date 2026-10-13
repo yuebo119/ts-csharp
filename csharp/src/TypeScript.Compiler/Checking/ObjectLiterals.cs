@@ -264,20 +264,22 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
 
             async ValueTask<Type> CreateAsync()
             {
-                var indexes = new List<IndexInfo>();
+                // Index signatures only exist for computed string/number/symbol keys; the common
+                // literal has none, so the list is built only when a key kind demands it.
+                List<IndexInfo>? indexes = null;
                 bool readOnly = await contexts.ConstAsync(node, cancellation).ConfigureAwait(false);
                 IReadOnlyList<Symbol> orderedSymbols = ordered ?? [];
                 if (stringKey)
-                    indexes.Add(await IndexAsync(context.StringType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
+                    (indexes ??= []).Add(await IndexAsync(context.StringType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
                 if (numberKey)
-                    indexes.Add(await IndexAsync(context.NumberType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
+                    (indexes ??= []).Add(await IndexAsync(context.NumberType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
                 if (symbolKey)
-                    indexes.Add(await IndexAsync(context.ESSymbolType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
+                    (indexes ??= []).Add(await IndexAsync(context.ESSymbolType, orderedSymbols.Skip(offset), readOnly, cancellation).ConfigureAwait(false));
                 Diagnostics.CompilationCapture.ProbeMark typeMark = Diagnostics.CompilationCapture.Mark();
                 var result = await spreads.ObjectAsync(
                     symbol,
                     table,
-                    indexes,
+                    indexes ?? [],
                     flags | ObjectFlags.ObjectLiteral | ObjectFlags.ContainsObjectOrArrayLiteral, cancellation).ConfigureAwait(false);
                 Diagnostics.CompilationCapture.Report(Diagnostics.AllocationProbes.ObjectType, typeMark);
                 if (contextual is null && JsLiteral(node))

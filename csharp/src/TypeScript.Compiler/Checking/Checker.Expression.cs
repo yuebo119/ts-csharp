@@ -317,6 +317,11 @@ internal sealed partial class Checker : IExpressionTypeHost, IExpressionCheckHos
             DiagnosticCode.TheOperandOfAnIncrementOrDecrementOperatorMayNotBeAnOptionalPropertyAccess);
     }
 
+    // One scanner serves every numeric-literal grammar check: the check re-scans the literal's own
+    // token, and a fresh Scanner per literal would allocate the scanner and its two lists each time.
+    // LiteralGrammar never recurses, so a single cached instance is safe.
+    private Scanner? literalScanner;
+
     public void LiteralGrammar(SyntaxNode node)
     {
         var file = SemanticSyntax.Source(node);
@@ -324,7 +329,8 @@ internal sealed partial class Checker : IExpressionTypeHost, IExpressionCheckHos
             return;
         if (node is NumericLiteralNode number)
         {
-            var scanner = new Scanner(file.Source);
+            var scanner = literalScanner ??= new Scanner(file.Source);
+            scanner.Reset(file.Source);
             scanner.ResetPosition(node.Pos);
             scanner.Scan();
             if (!scanner.TokenText.Contains((byte)'.') && (number.TokenFlags & TokenFlags.Scientific) == 0

@@ -205,10 +205,19 @@ internal sealed class ExpressionContexts(TypeContext context, TypeAlgebra algebr
                     if (position < 0)
                         return null;
                     var arrayContext = await ApparentAsync(array, flags, cancellation).ConfigureAwait(false);
-                    var spreadIndexes = array.Elements!.Select((e, i) => (e, i)).Where(p => p.e is SpreadElementNode).Select(p => p.i).ToArray();
-                    return await ElementAsync(arrayContext, position, array.Elements!.Count,
-                        spreadIndexes.Length == 0 ? -1 : spreadIndexes[0],
-                        spreadIndexes.Length == 0 ? -1 : spreadIndexes[^1],
+                    // The spread bounds are two integers; the LINQ chain that produced them allocated
+                    // four iterators and two arrays on every element contextual query, and almost every
+                    // array has no spread at all.
+                    var elements = array.Elements!;
+                    int firstSpread = -1, lastSpread = -1;
+                    for (int i = 0; i < elements.Count; i++)
+                        if (elements[i] is SpreadElementNode)
+                        {
+                            if (firstSpread < 0)
+                                firstSpread = i;
+                            lastSpread = i;
+                        }
+                    return await ElementAsync(arrayContext, position, elements.Count, firstSpread, lastSpread,
                         cancellation).ConfigureAwait(false);
                 case ConditionalExpressionNode conditional:
                     if (node == conditional.Condition)
@@ -391,6 +400,10 @@ internal sealed class ExpressionContexts(TypeContext context, TypeAlgebra algebr
     {
         if (contextual is null)
             return false;
+        // The work stack only earns its allocation once the walk can actually branch: a single
+        // non-composite, non-instantiable contextual type is decided by one flag test.
+        if (contextual is not UnionOrIntersectionType && (contextual.Flags & TypeFlags.InstantiableNonPrimitive) == 0)
+            return Matches(contextual, false);
         var pending = new Stack<Type>();
         pending.Push(contextual);
         while (pending.TryPop(out var type))
@@ -524,8 +537,13 @@ internal sealed class ExpressionContexts(TypeContext context, TypeAlgebra algebr
         if (!await LiteralAsync(type, contextual, cancellation).ConfigureAwait(false))
         {
             type = await widening.LiteralAsync(type, cancellation).ConfigureAwait(false);
-            type = (await algebra.MapAsync(type, part => ValueTask.FromResult<Type?>((part.Flags & TypeFlags.UniqueESSymbol) != 0
-                ? context.ESSymbolType : part), cancellation: cancellation).ConfigureAwait(false))!;
+            // The unique-symbol widening is a per-part flag test; routing the common non-union case
+            // through MapAsync would allocate a closure per widened literal.
+            if (type is UnionType)
+                type = (await algebra.MapAsync(type, part => ValueTask.FromResult<Type?>((part.Flags & TypeFlags.UniqueESSymbol) != 0
+                    ? context.ESSymbolType : part), cancellation: cancellation).ConfigureAwait(false))!;
+            else if ((type.Flags & TypeFlags.UniqueESSymbol) != 0)
+                type = context.ESSymbolType;
         }
         return await algebra.RegularTypeAsync(type, cancellation).ConfigureAwait(false);
     }
