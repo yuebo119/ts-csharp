@@ -34,7 +34,10 @@ public sealed partial class CompilerProgram
                 ? new(CompilerPath.BaseName(outputPath), options.SourceRoot is { Length: > 0 } root
                     ? CompilerPath.EnsureTrailingSeparator(CompilerPath.NormalizeSlashes(root)) : Utf8String.Empty,
                     MapDirectory(outputPath), program.UseCaseSensitiveFileNames, program.CurrentDirectory) : null;
-            var writer = new EmitTextWriter(NewLine);
+            // The output text of a file tracks its input size closely, so seeding the writer with
+            // the source length removes the doubling chain of orphaned growth buffers (measured
+            // 16.9 MB own-allocation on the huge-file fixture, the largest emit-side frame).
+            var writer = new EmitTextWriter(NewLine, capacity: Math.Max(1024, source.Source.Length));
             // A single large file has no file-level parallelism to fall back on, so its statements
             // are printed as independent ranges instead. Everything the split cannot preserve
             // (source maps, comments, helpers, generated names) makes the printer decline.

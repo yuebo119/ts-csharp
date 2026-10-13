@@ -153,11 +153,14 @@ internal sealed class ObjectSpreads(TypeContext context, CheckerLinks links, Typ
     {
         var result = context.NewObjectType(ObjectFlags.Anonymous | ObjectFlags.MembersResolved | flags, symbol);
         result.Members = members;
-        var named = new List<Symbol>();
+        var named = new List<Symbol>(members.Count);
         foreach (var (name, member) in members)
             if (await structuredMembers.NamedAsync(name, member, cancellation).ConfigureAwait(false))
                 named.Add(member);
-        result.Properties = named.Order(algebra.Order).ToArray();
+        // TypeOrder is a total order (unique symbol ids break every tie), so the in-place sort
+        // matches the previously used stable Order() while skipping its iterator machinery.
+        named.Sort(algebra.Order);
+        result.Properties = named.ToArray();
         result.CallSignatures = result.ConstructSignatures = [];
         result.IndexInfos = indexes;
         return result;

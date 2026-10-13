@@ -5,9 +5,9 @@ using TypeScript.Compiler.Text;
 namespace TypeScript.Compiler.Emission;
 
 /// <summary>Writes UTF-8 text and tracks the UTF-16 columns required by source maps.</summary>
-public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize = 4, bool inlineDisplay = false)
+public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize = 4, bool inlineDisplay = false, int capacity = 0)
 {
-    private readonly Utf8StringBuilder text = new();
+    private readonly Utf8StringBuilder text = new(capacity);
     private readonly Utf8String newLine = newLine.Length == 0 ? "\n"u8 : newLine;
     private readonly int indentSize = indentSize >= 0 ? indentSize : 4;
     private int lineStart;
