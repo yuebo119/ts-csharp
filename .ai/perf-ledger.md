@@ -40,6 +40,14 @@
 | `WidenLiteralAsync` 唯一符号加宽按联合与否分流（非联合免 MapAsync 闭包） | `ExpressionContexts` | r34 F3 |
 | 对象字面量 `IndexInfo` 列表惰性构建（仅计算属性名需要） | `ObjectLiterals.CreateAsync` | r34 F4 |
 | 数字字面量语法检查复用单个 Scanner（Reset 而非 new） | `Checker.LiteralGrammar` | r34 F5 |
+| r35 批次（`docs/csharp-perf-report-r35.md`，.NET 原生形态第 0~2 期；真实工程 noEmit −0.90%/huge-file 两期 −2.96%/全量态 998.7 MB；墙钟中性） | | |
+| 约束递归身份栈池化（每 checker 单缓冲容量 64 + (buffer,count) 视图，替每层数组快照） | `TypeConstraints.ResolvedBaseAsync` | r35 W6 |
+| 内部存储消包装对 45 处（数组即 IReadOnlyList；UnionOrIntersectionType 双存并轨；空表单例 Array.Empty） | `Types`/`TypeContext`/`TypeReferences` 等 24 文件 | r35 W1 |
+| checker 成员表统一 `Binding.SymbolTable`（内联小表 + 拷贝构造；ReadOnlyDictionary 包装清零；字面量表带容量提示） | `StructuredMembers`/`ObjectLiterals`/`ObjectSpreads` | r35 W2 |
+| emit 输出缓冲按源文件字节长度预置容量（消倍增孤儿链；huge-file emitBufferGrow own 16.90→8.39 MB） | `EmitTextWriter`/`CompilerProgram.EmitMaps` | r35 W7-lite |
+| 字面量物化属性排序 `List.Sort` 替 `Order()` LINQ（TypeOrder 全序无并列，稳定序等价） | `ObjectSpreads.ObjectAsync` | r35 |
+| `emitBufferGrow` 分配探针（Utf8StringBuilder.Reserve 扩容分支） | `Diagnostics/AllocationProbes` #39 | r35 |
+| 展开路径尾部定长元数手写倒扫（替 Reverse().TakeWhile().Count() 双迭代器） | `ExpressionContexts.ElementAsync` | r35 |
 
 ## 表2 明确不做（否决必留数据，防下轮重提案）
 
@@ -76,6 +84,8 @@
 | 诊断分组一次成型（CheckerPool 字典直传 + IncludeDiagnostics HashSet） | 推迟：目标负载（错误/include 密集型诊断）不在测量语料（夹具全 clean），O(文件×诊断) 无对象可测；诊断管线输出顺序敏感。触发条件：错误密集型工程夹具 | r32 §3 |
 | 顶层 await span 级重解析（Go 1:1 移植） | 推迟：真实工程 113 个非声明文件中顶层 await 为 0，收益不可测；语句拼接微妙（扫描器重定位/JSDoc/错误恢复）。触发条件：语料出现 TLA 文件 | r32 §3 |
 | 扫描器微结构三项（标点优先分发/空白向量化/取消检查降频） | 承接上行定界：per-token 取消检查约 1ms（低于噪声两个数量级）且移除降低 Ctrl-C 粒度（语句级无现存检查）；标点优先与空白向量化合计预期 <0.5% 墙钟 | r32 §3 |
+| emit 缓冲 ArrayPool 池化（W7 原形态） | 所有权审计否决：`DetachText` 视图跨越 `emitOptions.WriteFile` 钩子与可替换 `IFileSystem`（LSP 内存文件系统可保留文本），归还池即悬垂。同源收益已由容量预置拿走（huge-file emitBufferGrow own 16.90→8.39 MB，孤儿链消除），不动所有权 | r35（`docs/csharp-perf-report-r35.md` §4） |
+| API 边界结果的 `Array.AsReadOnly` 去包装 | `module-program-specifiers-safety` 钉死 `((IList<T>)result.Specifiers)[0]=x` 必须抛 `NotSupportedException`，裸数组 IList 写入会成功（实测两测试新失败后回退）。界线：内部存储包装是冗余（45 处已去），API 边界包装是不可变契约（ModuleSpecifierGenerator/SemanticTokens/ProjectSnapshot 保留） | r35 §5 教训 1 |
 
 ## 表3 勿重开（实施后被证伪回退，翻案须先过前置障碍）
 
@@ -86,6 +96,8 @@
 
 ## 待勘区（未否决、未做完，勿重复立项评估）
 
-两项待触发器（均已在表2 记录数据与触发条件）：诊断分组一次成型（待错误密集型夹具）、顶层 await span 级重解析（待语料出现 TLA）。对 Go 的 AB 批次刷新已于 2026-10-13 完成（r34-comparison，四批 AB129~AB132；重负载对 Go 默认 x1.423，AB132 对批证实 r34 与 r32 墙钟等价，与 r32 表 x1.397 的差为批间漂移）；分层协议实验（--tier）当日落地后按用户指令全额还原。**同节点二次全量复测（AB134~AB136，还原后的原始协议）：重负载对 Go 默认 x1.398、对基线 +47.6%，与首批 x1.423/+47.1% 的差 ~1.8% 即批间漂移的实测幅度，区间 x1.398~x1.423 已回写 perf-budgets。** Go 侧 155 MiB 的分配口径（GOGC=off 提交峰值，r15）未随夹具态重测，"分配相对 Go"预算行待 Go 侧重测后重设。
+**r35 移交三件（2026-10-13，`docs/csharp-perf-report-r35.md` §7）**：①W3 字面量形状结构体化（方案主攻）——弹性已放行（AOT huge-file 1:1.1 / medium 1:4.2 / 串行 1:7.6，AB140/AB141 实测矩阵，JIT 臂 1:3.5~1:10.9）、W2 使能器已落地、逐站点分配普查在方案 §4.W3 表；预期 medium −30% 分配 ≈ −7% 墙钟、真实工程侧 ≤3%（普查：字面量族在真实工程 check 相位仅 7.7%）；r27 布局敏感先例覆盖，隔离巨文件批次强制。②W4 closed 整链 + union（union 是 preview 特性，GA 前语法可变；墙钟 <0.5%，正确性动机为主，独立会话执行）。③W5 FrozenDictionary（<0.5%，触碰全局只读表的轮次顺手做，不单独立项）。观测面移交：真实工程下一个有斜率的分配面是关系引擎族（单 checker inclusive relationCompare 185 M / checkerRelated 170 M），受 r27 表3 勿重开约束，除非布局扰动归因先行解决，此面保持关闭。
+
+两项待触发器（均已在表2 记录数据与触发条件）：诊断分组一次成型（待错误密集型夹具）、顶层 await span 级重解析（待语料出现 TLA）。对 Go 的 AB 批次刷新已于 2026-10-13 完成（r34-comparison，四批 AB129~AB132；重负载对 Go 默认 x1.423，AB132 对批证实 r34 与 r32 墙钟等价，与 r32 表 x1.397 的差为批间漂移）；分层协议实验（--tier）当日落地后按用户指令全额还原。**同节点二次全量复测（AB134~AB136，还原后的原始协议）：重负载对 Go 默认 x1.398、对基线 +47.6%，与首批 x1.423/+47.1% 的差 ~1.8% 即批间漂移的实测幅度，区间 x1.398~x1.423 已回写 perf-budgets。** Go 侧 155 MiB 的分配口径（GOGC=off 提交峰值，r15）未随夹具态重测，"分配相对 Go"预算行待 Go 侧重测后重设。r35 轮墙钟中性（AB143/AB144 全 CI 跨 1.0），未触发对 Go 全量批次，墙钟锚点维持。
 
 **从零重建基线 + 全量复测（2026-10-13，`docs/csharp-perf-report-r34-rebaseline.md`，批 AB137~AB139）**：三侧全部从源码重建（Go 参考 sha256 与历史逐字节一致；C# 基线与当前产物输出逐字节一致）。fresh 全量结果：重负载对 fresh 基线 +46.2%、对 Go 默认 x1.396；分配 1,221.7 → 1,001.7 MB（−18.0%，与历史二进制测量差 0.02%）。**关键发现：历史 naot-svr 二进制带着旧工具链签名（fresh 重建后小 275KB，轻负载性能签名系统性不同）——轻负载 12 项对 fresh 基线读 −4.9%，而历史批读 +3.4%，说明轻负载的既存"改善"部分是工具链假象；重负载 +46% 不受影响。后续对比一律以 `pkgs-fresh/naot-svr` 为基线，历史 naot-svr 退化为史料。**
