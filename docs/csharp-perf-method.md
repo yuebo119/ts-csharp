@@ -82,35 +82,18 @@
 ## 8. 一次标准测量的命令模板
 
 ```powershell
-# 每轮产品改动后：decision 层，latest vs previous 同批（r34 起的标准动作，~80s）
-node tools/perf-cli.mjs --manifest manifests/r34.json --baseline-manifest manifests/r32.json `
-  --no-gc-env --tier decision --samples 15 --directory bench/AB132-r34-vs-r32
+# C# 最新 vs 基线（产品形态，同批配对）
+node tools/perf-cli.mjs --manifest manifests/final7-noembed.json `
+  --go-executable pkgs/naot-svr/lib/tsc.exe `
+  --csharp-env "DOTNET_gcServer=0,DOTNET_GCgen0size=0x400000,DOTNET_GCLOHThreshold=1000000" `
+  --samples 15 --directory bench/AB37-final7-noembed-vs-baseline
 
-# 用户要对比表时：table 层两批（vs Go 默认 / vs 优化前基线）；Go@400 按需加跑
-node tools/perf-cli.mjs --manifest manifests/r34.json --go-executable pkgs/go-v1/lib/tsc.exe `
-  --no-gc-env --tier table --samples 15 --directory bench/AB129-r34-vs-go-default
-node tools/perf-cli.mjs --manifest manifests/r34.json --go-executable pkgs/go-v3/lib/tsc.exe `
-  --go-env "GOGC=400" --no-gc-env --tier table --samples 15 --directory bench/AB130-r34-vs-go400
+# 同二进制开关 A/B（最严格）
+node tools/perf-cli.mjs --manifest manifests/final7-noembed.json `
+  --go-executable pkgs/final7-noembed/lib/tsc.exe `
+  --csharp-env "<实验配置>" --go-env "<对照配置>" `
+  --samples 11 --filter "^(medium|huge-file|small-first-diagnostic)$" --directory bench/AB38-...
 
-# 分阶段分配（确定性，不受负载状态文件陷阱影响的口径见 §7.1）
+# 分阶段分配（确定性，不受负载影响）
 tsc --project <夹具> --extendedDiagnostics --pretty false | Select-String "Alloc |time"
 ```
-
-## 9. 分层测量协议（r34  redesign，2026-10-13）
-
-23 个负载不是等权的。r06~r34 九张表的复盘结论：7 行 project-references（CI 5.2%~16.7%）、3 行启动地板、5 行 medium 变体阶梯合计约占单批 40% 时间，**从未驱动过任何决策**；而决定过事的行（重负载族、tiny-files-noemit、host-paths、medium-checkers-1）CI 都在 2.4%~6%。据此把批次切成两层，harness 用 `--tier`  preset 支持（`tools/perf-cli.mjs`，显式 `--filter` 优先于 `--tier`）：
-
-| 层 | 行（7 / 15） | 样本 | 时机 | 单批耗时 |
-| --- | --- | --- | --- | --- |
-| **decision** | huge-file、medium、medium-checkers-1、declarations、tiny-files、tiny-files-incremental-edit、version | 15 对 | **每个产品改动后**，latest vs previous 同批配对 | ~80 s |
-| **table** | decision 7 行 + medium-checkers-8、tiny-files-noemit、tiny-files-noemit-on-error、host-paths、small-first-diagnostic、empty-project、project-references-clean/-declaration | 15 对（轻负载行可降 9） | 用户要对比表时：vs Go 默认 + vs 优化前基线两批 | 两批合计 ~5 min（vs Go ~2 min / vs 基线 ~2.8 min，基线产物更慢） |
-
-**退役行（8）**：medium-checkers-2/4（阶梯只留两端点，默认档即 medium 本身）、medium-256m-heap-setting（GC 配置变更时按需跑）、help（与 version 近重复）、project-references-noop/-implementation/-config/-package（同族近重复，保留 clean/declaration 两个代表）。退役行不再进新表，历史表仍可查；表模板须加退役注记。
-
-**节奏契约**：
-1. 例行轮次只跑 decision 层且**必须是 latest vs previous 同批**（`--baseline-manifest` 指向上轮产物）。这一条消灭跨批比值比较：r34 表 x1.397→x1.423 的假回潮（AB132 对账才澄清）在这套协议下不会发生。
-2. 「对基线改善%」累计列只在 table 层刷新时更新；例行轮次的产出是「这轮 vs 上轮」的比值与 CI。
-3. Go@400 批降为按需（用户明确要时才跑），不再每次刷新都跑。
-4. `--warmups` 默认仍是 3；确需压缩时可显式设 1（每行省 ~11%，会略增首跑噪声，仅建议在 decision 层用）。
-
-单轮成本：旧流程 4 批 ~11 min + 发布 ~2.5 min ≈ 14 min；新流程 1 批 ~80 s + 发布 ≈ 3.5 min。表刷新：旧 ~14 min；新 ~5 min。决策行 CI 不变。
