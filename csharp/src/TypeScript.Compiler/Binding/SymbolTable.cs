@@ -29,6 +29,18 @@ internal sealed class SymbolTable : IReadOnlyDictionary<Utf8String, Symbol>, ICo
             entries = new Entry[capacity];
     }
 
+    // Checker-side member tables copy out of declared tables before inheriting bases; the copy
+    // reuses the small-group shape rather than paying a dictionary per table.
+    internal SymbolTable(IReadOnlyDictionary<Utf8String, Symbol> source)
+    {
+        if (source.Count > SmallCapacity)
+            entries = new Dictionary<Utf8String, Symbol>(source.Count);
+        else if (source.Count != 0)
+            entries = new Entry[source.Count];
+        foreach (var (name, symbol) in source)
+            this[name] = symbol;
+    }
+
     public int Count => entries is Dictionary<Utf8String, Symbol> table ? table.Count : count;
 
     public Symbol this[Utf8String key]

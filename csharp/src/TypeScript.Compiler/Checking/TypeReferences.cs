@@ -255,7 +255,7 @@ internal sealed class TypeReferences(TypeContext context, CheckerLinks links, Ch
         var target = (InterfaceType)reference.ReferencedType;
         int count = target.AllTypeParameters.Count - (target.ThisType is null ? 0 : 1);
         if (!resolutions.Push(reference, TypeSystemPropertyName.ResolvedTypeArguments))
-            return Array.AsReadOnly(Enumerable.Repeat<Type>(context.ErrorType, count).ToArray());
+            return Enumerable.Repeat<Type>(context.ErrorType, count).ToArray();
         bool active = true;
         try
         {
@@ -275,12 +275,12 @@ internal sealed class TypeReferences(TypeContext context, CheckerLinks links, Ch
             if (resolved)
             {
                 if (reference.ResolvedTypeArguments is null)
-                    reference.ResolvedTypeArguments = reference.Mapper is null ? Array.AsReadOnly(arguments)
+                    reference.ResolvedTypeArguments = reference.Mapper is null ? arguments
                         : await instantiation.TypesAsync(arguments, reference.Mapper, cancellation).ConfigureAwait(false);
             }
             else
             {
-                reference.ResolvedTypeArguments ??= Array.AsReadOnly(Enumerable.Repeat<Type>(context.ErrorType, count).ToArray());
+                reference.ResolvedTypeArguments ??= Enumerable.Repeat<Type>(context.ErrorType, count).ToArray();
                 host.CircularArguments(reference.Node, target);
             }
             return reference.ResolvedTypeArguments;

@@ -248,7 +248,7 @@ internal sealed partial class TypeInference(TypeContext context, TypeAlgebra alg
             var result = new Type[inference.Inferences.Length];
             for (int i = 0; i < result.Length; i++)
                 result[i] = await GetWorkerAsync(inference, i, cancellation).ConfigureAwait(false);
-            return (IReadOnlyList<Type>)Array.AsReadOnly(result);
+            return result;
         }, cancellation).ConfigureAwait(false);
 
     internal async ValueTask<Type?> FromCandidatesAsync(InferenceInfo info, CancellationToken cancellation = default)

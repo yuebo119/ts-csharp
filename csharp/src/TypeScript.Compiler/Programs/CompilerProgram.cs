@@ -85,11 +85,11 @@ public sealed partial class CompilerProgram
         GlobalTypingsCache = builder.GlobalTypingsCache;
         externalLibraryFiles = builder.ExternalLibraryFiles.ToHashSet(files.Comparer);
         ModuleResolutionKind = builder.ResolutionKind;
-        SourceFiles = Array.AsReadOnly(ordered);
+        SourceFiles = ordered;
         ExplanationFiles = builder.explanationFiles;
         ResolutionTrace = builder.resolutionTrace.ToArray();
         Configuration = builder.config;
-        RootFileNames = Array.AsReadOnly(builder.config.FileNames.Select(path => CompilerPath.ResolveFileName(CurrentDirectory, path)).ToArray());
+        RootFileNames = builder.config.FileNames.Select(path => CompilerPath.ResolveFileName(CurrentDirectory, path)).ToArray();
         ProjectReferences = builder.references;
         MissingFiles = builder.missing.ToArray();
         Redirects = builder.redirects.AsReadOnly();
@@ -158,7 +158,7 @@ public sealed partial class CompilerProgram
             .Where(diagnostic => diagnostic.FileName is null || !builder.includeDiagnostics.Contains(diagnostic))
             .Concat(CompilerOptionDiagnostics()).Concat(ModulePathOptionDiagnostics()).Concat(VerifyOutputPaths())
             .Concat(compositeErrors.Where(diagnostic => diagnostic.FileName is null)));
-        IncludeDiagnostics = Array.AsReadOnly(builder.includeDiagnostics.ToArray());
+        IncludeDiagnostics = builder.includeDiagnostics.ToArray();
     }
 
     public ProgramFile? GetFile(Utf8String path)
@@ -776,7 +776,7 @@ public sealed partial class CompilerProgram
                     {
                         Mapping = parsed.Mapping?.Canonical ?? supplemental.GetValueOrDefault(entry.Path),
                         SupplementalSourceFiles = parsed.Mapping is { } projection
-                            ? Array.AsReadOnly(projection.Supplemental.Select(file => file.Syntax.FileName).ToArray()) : [],
+                            ? projection.Supplemental.Select(file => file.Syntax.FileName).ToArray() : [],
                     });
                 }
             }

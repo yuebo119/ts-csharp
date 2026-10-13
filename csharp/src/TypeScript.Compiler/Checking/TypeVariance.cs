@@ -192,7 +192,7 @@ internal sealed class TypeVariance(
             }
             cancellation.ThrowIfCancellationRequested();
             if (!cache.TryGetValue(symbol, out cached) || cached.Count == 0)
-                Set(symbol, Array.AsReadOnly(result));
+                Set(symbol, result);
             return cache[symbol];
         }
         finally

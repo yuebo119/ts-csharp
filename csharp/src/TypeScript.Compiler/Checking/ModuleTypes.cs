@@ -43,7 +43,7 @@ internal sealed class ModuleTypes(TypeContext context, CheckerLinks links, Alias
         inherited.Sort(order.CompareSymbols);
         var type = context.NewObjectType(ObjectFlags.Anonymous | ObjectFlags.MembersResolved, result);
         type.Members = resolved.Members;
-        type.Properties = Array.AsReadOnly<Symbol>([.. declared, .. inherited]);
+        type.Properties = [.. declared, .. inherited];
         type.IndexInfos = resolved.IndexInfos;
         var exports = links.ExportTypes.Get(result);
         exports.Target = symbol;

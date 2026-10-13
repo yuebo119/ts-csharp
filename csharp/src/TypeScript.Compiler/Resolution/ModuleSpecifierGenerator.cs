@@ -84,6 +84,8 @@ internal sealed partial class ModuleSpecifierGenerator(IModuleSpecifierHost host
             if (existingMode != mode && existingMode != 0 && mode != 0)
                 continue;
             if (text.Length != 0)
+                // The specifiers list is a published result: the read-only wrapper is the
+                // immutability contract pinned by module-program-specifiers-safety.
                 return new(Array.AsReadOnly(new[] { text }), ModuleSpecifierKind.None);
             break;
         }

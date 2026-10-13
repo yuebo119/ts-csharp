@@ -8,8 +8,8 @@ internal readonly struct RelationKey : IEquatable<RelationKey>
     private readonly Type? source, target;
     private readonly int hash;
     internal IntersectionState Intersection { get; }
-    internal IReadOnlyList<Part> Parts => Array.AsReadOnly(parts ?? (source is null ? [] :
-        [new((byte)'s'), new((byte)'t', source), new((byte)'t', target)]));
+    internal IReadOnlyList<Part> Parts => parts ?? (source is null ? [] :
+        [new((byte)'s'), new((byte)'t', source), new((byte)'t', target)]);
 
     internal RelationKey(Type source, Type target, IntersectionState intersection)
     {

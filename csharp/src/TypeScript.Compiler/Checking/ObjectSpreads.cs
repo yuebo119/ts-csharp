@@ -58,7 +58,7 @@ internal sealed class ObjectSpreads(TypeContext context, CheckerLinks links, Typ
             }
             return await algebra.IntersectionAsync([left, right], cancellation: cancellation).ConfigureAwait(false);
         }
-        var members = new Dictionary<Utf8String, Symbol>();
+        var members = new SymbolTable();
         var skipped = new HashSet<Utf8String>();
         var indexInfos = left == context.EmptyObjectType ? await host.IndexesAsync(right, cancellation).ConfigureAwait(false)
             : await UnionIndexesAsync(left, right, cancellation).ConfigureAwait(false);
@@ -126,7 +126,7 @@ internal sealed class ObjectSpreads(TypeContext context, CheckerLinks links, Typ
         var first = nonEmpty[0];
         if (nonEmpty.Any(t => t != first))
             return type;
-        var members = new Dictionary<Utf8String, Symbol>();
+        var members = new SymbolTable();
         foreach (var property in await properties.GetAsync(first, cancellation).ConfigureAwait(false))
         {
             if (NonPublic(property) || !BindingTypes.Spreadable(property))
@@ -148,11 +148,11 @@ internal sealed class ObjectSpreads(TypeContext context, CheckerLinks links, Typ
             ObjectFlags.ObjectLiteral | ObjectFlags.ContainsObjectOrArrayLiteral, cancellation).ConfigureAwait(false);
     }
 
-    internal async ValueTask<ObjectType> ObjectAsync(Symbol? symbol, Dictionary<Utf8String, Symbol> members,
+    internal async ValueTask<ObjectType> ObjectAsync(Symbol? symbol, SymbolTable members,
         IReadOnlyList<IndexInfo> indexes, ObjectFlags flags = 0, CancellationToken cancellation = default)
     {
         var result = context.NewObjectType(ObjectFlags.Anonymous | ObjectFlags.MembersResolved | flags, symbol);
-        result.Members = members.AsReadOnly();
+        result.Members = members;
         var named = new List<Symbol>();
         foreach (var (name, member) in members)
             if (await structuredMembers.NamedAsync(name, member, cancellation).ConfigureAwait(false))

@@ -80,7 +80,7 @@ internal sealed class DeclaredTypes(TypeContext context, CheckerLinks links, Che
                 var parameters = scopes.Local(symbol, cancellation).Cast<TypeParameter>().ToArray();
                 if (parameters.Length != 0)
                 {
-                    data.TypeParameters = Array.AsReadOnly(parameters);
+                    data.TypeParameters = parameters;
                     data.Instantiations = new() { [TypeCacheKey.Instantiation(parameters, null, false)] = type };
                 }
                 if (type == context.IntrinsicMarkerType && symbol.Name == Utf8Literals.BuiltinIteratorReturn)

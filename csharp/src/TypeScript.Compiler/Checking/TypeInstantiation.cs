@@ -286,7 +286,7 @@ internal sealed partial class TypeInstantiation(TypeContext context, TypeAlgebra
             if (result is not null)
                 result[i] = mapped;
         }
-        return result is null ? types : Array.AsReadOnly(result);
+        return result is null ? types : result;
     }
 
     internal async ValueTask<TypeAlias?> AliasAsync(TypeAlias? alias, TypeMapper mapper, CancellationToken cancellation = default)

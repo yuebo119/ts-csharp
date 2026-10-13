@@ -71,7 +71,7 @@ public sealed class SpanMap
     public SpanMap(IEnumerable<MappingSegment> segments)
     {
         this.segments = segments.ToArray();
-        Segments = Array.AsReadOnly(this.segments);
+        Segments = this.segments;
         original = new(() => new(this.segments));
     }
 

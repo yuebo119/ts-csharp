@@ -166,16 +166,16 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         for (int i = 0; !instantiated && i < parameters.Count; i++)
             instantiated = parameters[i] != arguments[i];
         TypeMapper? mapper = instantiated ? TypeMapper.Create(parameters, arguments) : null;
-        // When the table is instantiated the dictionary built here is fresh and mutable, so the base
+        // When the table is instantiated the table built here is fresh and mutable, so the base
         // loop can inherit into it directly. Only a non-instantiated table needs the copy below.
-        Dictionary<Utf8String, Symbol>? owned = null;
+        SymbolTable? owned = null;
         IReadOnlyDictionary<Utf8String, Symbol>? members = source.DeclaredMembers;
         IReadOnlyList<Signature> calls = source.DeclaredCallSignatures ?? [], constructors = source.DeclaredConstructSignatures ?? [];
         IReadOnlyList<IndexInfo> indexes = source.DeclaredIndexInfos ?? [];
         if (mapper is not null)
         {
             owned = await InstantiateTableAsync(source.DeclaredMembers, mapper, cancellation).ConfigureAwait(false);
-            members = owned?.AsReadOnly();
+            members = owned;
             calls = await InstantiateSignaturesAsync(calls, mapper, cancellation).ConfigureAwait(false);
             constructors = await InstantiateSignaturesAsync(constructors, mapper, cancellation).ConfigureAwait(false);
             indexes = await InstantiateIndexesAsync(indexes, mapper, cancellation).ConfigureAwait(false);
@@ -183,10 +183,8 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         var bases = await host.BaseTypesAsync(source, cancellation).ConfigureAwait(false);
         if (bases.Count != 0)
         {
-            owned ??= members is null
-                ? new Dictionary<Utf8String, Symbol>()
-                : new(members, Utf8StringComparer.Ordinal);
-            members = owned.AsReadOnly();
+            owned ??= members is null ? new SymbolTable() : new(members);
+            members = owned;
             await SetAsync(type, members, calls, constructors, indexes, cancellation).ConfigureAwait(false);
             type.ObjectFlags |= O.UnresolvedMembers;
             foreach (var baseType in bases)
@@ -228,7 +226,7 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
                     if (!duplicate)
                         merged.Add(next);
                 }
-                indexes = merged.AsReadOnly();
+                indexes = [.. merged];
             }
             type.ObjectFlags &= ~O.UnresolvedMembers;
         }
@@ -241,10 +239,10 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         {
             await SetAsync(type, null, [], [], [], cancellation).ConfigureAwait(false);
             var targetProperties = await host.PropertiesAsync(target, cancellation).ConfigureAwait(false);
-            var members = new Dictionary<Utf8String, Symbol>(targetProperties.Count, Utf8StringComparer.Ordinal);
+            var members = new SymbolTable(targetProperties.Count);
             foreach (var property in targetProperties)
                 members[property.Name] = (await instantiation.SymbolAsync(property, type.Mapper!, cancellation).ConfigureAwait(false))!;
-            await SetAsync(type, members.AsReadOnly(),
+            await SetAsync(type, members,
                 await InstantiateSignaturesAsync(
                     await host.SignaturesAsync(target, false, cancellation).ConfigureAwait(false),
                     type.Mapper!,
@@ -284,7 +282,7 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
                     && p.Value.Declarations.All(
                         d => d is ModuleDeclarationNode { Name: StringLiteralNode }
                             or ModuleDeclarationNode { Keyword: SyntaxKind.GlobalKeyword })))
-                .ToDictionary(p => p.Key, p => p.Value, Utf8StringComparer.Ordinal).AsReadOnly();
+                .ToDictionary(p => p.Key, p => p.Value, Utf8StringComparer.Ordinal);
         await SetAsync(type, exports, [], [], [], cancellation).ConfigureAwait(false);
         bool anyBase = false;
         InterfaceType? classType = null;
@@ -294,9 +292,9 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
             var baseConstructor = await host.BaseConstructorAsync(classType, cancellation).ConfigureAwait(false);
             if ((baseConstructor.Flags & (TypeFlags.Object | TypeFlags.Intersection | TypeFlags.TypeVariable)) != 0)
             {
-                var inherited = new Dictionary<Utf8String, Symbol>(exports, Utf8StringComparer.Ordinal);
+                var inherited = new SymbolTable(exports);
                 Inherit(inherited, await host.PropertiesAsync(baseConstructor, cancellation).ConfigureAwait(false));
-                exports = inherited.AsReadOnly();
+                exports = inherited;
                 await SetAsync(type, exports, [], [], [], cancellation).ConfigureAwait(false);
             }
             else
@@ -323,7 +321,7 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
                     indexInfos.Add(enumIndex);
             }
         }
-        type.IndexInfos = indexInfos.AsReadOnly();
+        type.IndexInfos = [.. indexInfos];
         if ((symbol.Flags & (S.Function | S.Method)) != 0)
             type.CallSignatures = await signatures.OfSymbolAsync(symbol, cancellation).ConfigureAwait(false);
         if (classType is not null)
@@ -433,14 +431,14 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
         return false;
     }
 
-    private async ValueTask<Dictionary<Utf8String, Symbol>?> InstantiateTableAsync(
+    private async ValueTask<SymbolTable?> InstantiateTableAsync(
         IReadOnlyDictionary<Utf8String, Symbol>? table,
         TypeMapper mapper,
         CancellationToken cancellation)
     {
         if (table is null)
             return null;
-        var result = new Dictionary<Utf8String, Symbol>(table.Count, Utf8StringComparer.Ordinal);
+        var result = new SymbolTable(table.Count);
         foreach (var (name, symbol) in table)
             if (await NamedAsync(name, symbol, cancellation).ConfigureAwait(false))
                 result[name] = (await instantiation.SymbolAsync(symbol, mapper, cancellation).ConfigureAwait(false))!;
@@ -488,7 +486,7 @@ internal sealed class StructuredMembers(TypeContext context, CheckerSymbols symb
             && (await aliases.FlagsAsync(symbol, excludeTypeOnly: true, cancellation: cancellation).ConfigureAwait(false) & S.Value) != 0;
     }
 
-    private static void Inherit(Dictionary<Utf8String, Symbol> members, IReadOnlyList<Symbol> source)
+    private static void Inherit(SymbolTable members, IReadOnlyList<Symbol> source)
     {
         foreach (var symbol in source)
             if (!(symbol.ValueDeclaration is { } declaration

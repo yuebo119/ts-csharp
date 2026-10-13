@@ -40,7 +40,7 @@ public sealed class TypeAlias
     internal TypeAlias(Symbol symbol, ReadOnlySpan<Type> arguments)
     {
         Symbol = symbol;
-        TypeArguments = Array.AsReadOnly(arguments.ToArray());
+        TypeArguments = arguments.ToArray();
     }
 }
 
@@ -198,8 +198,10 @@ public abstract class UnionOrIntersectionType : StructuredType
     private protected UnionOrIntersectionType(TypeContext context, TypeFlags flags, ObjectFlags objectFlags, ReadOnlySpan<Type> types)
         : base(context, flags, objectFlags)
     {
+        // A bare array is the IReadOnlyList view; TypesSpan exposes the same storage internally,
+        // so the previous read-only wrapper was one extra allocation per union and intersection.
         this.types = types.ToArray();
-        Types = Array.AsReadOnly(this.types);
+        Types = this.types;
     }
 }
 
@@ -275,8 +277,8 @@ public sealed class TemplateLiteralType : ConstrainedType
     internal TemplateLiteralType(TypeContext context, ReadOnlySpan<Utf8String> texts, ReadOnlySpan<Type> types)
             : base(context, TypeFlags.TemplateLiteral)
     {
-        Texts = Array.AsReadOnly(texts.ToArray());
-        Types = Array.AsReadOnly(types.ToArray());
+        Texts = texts.ToArray();
+        Types = types.ToArray();
     }
 }
 
@@ -400,6 +402,6 @@ public sealed class IndexInfo
         ValueType = valueType;
         IsReadonly = isReadonly;
         Declaration = declaration;
-        Components = Array.AsReadOnly(components.ToArray());
+        Components = components.ToArray();
     }
 }

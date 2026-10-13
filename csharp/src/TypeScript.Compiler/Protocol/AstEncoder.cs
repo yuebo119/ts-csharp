@@ -15,7 +15,7 @@ public sealed class AstNodeIndexTable
     public IReadOnlyList<SyntaxNode?> Nodes { get; }
     internal AstNodeIndexTable(SyntaxNode?[] nodes)
     {
-        Nodes = Array.AsReadOnly(nodes);
+        Nodes = nodes;
         for (uint index = 1; index < nodes.Length; index++) if (nodes[index] is { } node) indices.TryAdd(node, index);
     }
     public uint GetIndex(SyntaxNode node) => indices.GetValueOrDefault(node);

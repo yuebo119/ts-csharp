@@ -136,7 +136,7 @@ internal sealed class TypeParameterScopes(TypeContext context, CheckerLinks link
                 thisType.Constraint = result;
                 result.ThisType = thisType;
                 result.OuterTypeParameterCount = outer.Count;
-                result.ResolvedTypeArguments = Array.AsReadOnly(parameters.ToArray());
+                result.ResolvedTypeArguments = parameters.ToArray();
                 result.AllTypeParameters = (Type[])[.. parameters, thisType];
                 result.Target = result;
                 result.Instantiations = new() { [new TypeCacheKey(parameters.ToArray())] = result };

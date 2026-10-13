@@ -169,7 +169,7 @@ internal sealed class SignatureComposition(TypeContext context, CheckerLinks lin
             var result = context.NewSignature(flags, left.Declaration, typeParameters.ToArray(), receiver, combined.ToArray(), null, null,
                 Math.Max(left.MinArgumentCount, right.MinArgumentCount));
             var parts = left.Composite is { IsUnion: true } composite ? composite.Signatures : [left];
-            result.Composite = new(isUnion, Array.AsReadOnly<Signature>([.. parts, right]));
+            result.Composite = new(isUnion, [.. parts, right]);
             if (mapper is not null)
                 result.Mapper = left.Composite?.IsUnion == isUnion && left.Mapper is not null
                     ? instantiation.Combine(left.Mapper, mapper)
@@ -246,7 +246,7 @@ internal sealed class SignatureComposition(TypeContext context, CheckerLinks lin
                 links.Values.Get(symbol).ResolvedType = await InstantiateAsync(type, mapper, cancellation).ConfigureAwait(false);
             result[count] = symbol;
         }
-        return Array.AsReadOnly(result);
+        return result;
     }
 
     internal async ValueTask<IReadOnlyList<Signature>> ArrayMembersAsync(UnionType type, CancellationToken cancellation = default)

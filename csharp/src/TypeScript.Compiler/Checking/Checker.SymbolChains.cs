@@ -130,11 +130,11 @@ internal sealed partial class Checker
             BeforeSymbolChainTable?.Invoke(lookup.Symbol);
             var direct = table.GetValueOrDefault(lookup.Symbol.Name);
             if (direct is not null && await ChainSymbolAccessibleAsync(lookup, direct, null, ignoreQualification, cancellation))
-                return Array.AsReadOnly(new[] { lookup.Symbol });
+                return [lookup.Symbol];
             IReadOnlyList<Symbol>? best = null;
             if (direct?.ExportSymbol is { } exported && await ChainSymbolAccessibleAsync(lookup,
                 program.Symbols.Merger.GetMergedSymbol(exported)!, null, ignoreQualification, cancellation))
-                best = Array.AsReadOnly(new[] { lookup.Symbol });
+                best = [lookup.Symbol];
             foreach (var alias in SymbolTableAliases(table, identity))
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -193,7 +193,7 @@ internal sealed partial class Checker
         bool ignoreQualification, CancellationToken cancellation)
     {
         if (await ChainSymbolAccessibleAsync(lookup, alias, resolved, ignoreQualification, cancellation))
-            return Array.AsReadOnly(new[] { alias });
+            return [alias];
         var exports = await ExportsAsync(resolved, cancellation);
         var chain = await ChainFromTableAsync(lookup, exports, new(SymbolTableKind.ResolvedExports, resolved), true, false, cancellation);
         if (chain is null || !await CanQualifyAsync(lookup, alias, QualifiedLeftMeaning(lookup.Meaning), cancellation))
@@ -202,7 +202,7 @@ internal sealed partial class Checker
         result[0] = alias;
         for (int i = 0; i < chain.Count; i++)
             result[i + 1] = chain[i];
-        return Array.AsReadOnly(result);
+        return result;
     }
 
     private async ValueTask<bool> ChainSymbolAccessibleAsync(ChainContext lookup, Symbol candidate, Symbol? resolved,

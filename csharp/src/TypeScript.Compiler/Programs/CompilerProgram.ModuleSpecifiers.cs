@@ -109,8 +109,8 @@ public sealed partial class CompilerProgram
         internal ProgramModuleSpecifierHost(CompilerProgram program, CancellationToken cancellation)
         {
             this.program = program;
-            ContentMapperExtensions = Array.AsReadOnly(
-                program.Configuration.ContentMappers.SelectMany(m => m.Extensions).Distinct().ToArray());
+            ContentMapperExtensions =
+                program.Configuration.ContentMappers.SelectMany(m => m.Extensions).Distinct().ToArray();
             var redirectLists = new Dictionary<Utf8String, List<Utf8String>>(Utf8StringComparer.Ordinal);
             foreach (var entry in program.Redirects)
             {

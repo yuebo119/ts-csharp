@@ -122,8 +122,8 @@ public sealed partial class SourceFileNode
                 (documentation ??= new(ReferenceEqualityComparer.Instance))[clonedOwner] = comments;
             }
         ExternalModuleIndicator = original.ExternalModuleIndicator is { } indicator ? copies[indicator] : null;
-        Imports = Array.AsReadOnly(original.Imports.Select(MapReference).ToArray());
-        ModuleAugmentations = Array.AsReadOnly(original.ModuleAugmentations.Select(node => copies[node]).ToArray());
+        Imports = original.Imports.Select(MapReference).ToArray();
+        ModuleAugmentations = original.ModuleAugmentations.Select(node => copies[node]).ToArray();
 
         SyntaxNode MapReference(SyntaxNode node)
         {

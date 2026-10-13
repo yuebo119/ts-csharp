@@ -62,7 +62,7 @@ internal sealed class ObjectInstantiation(
             else if (filter && (target.Symbol!.Flags & (SymbolFlags.Method | SymbolFlags.TypeLiteral)) != 0)
                 parameters = await FilterAsync(parameters, type.Symbol!.Declarations, cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
-            data.OuterTypeParameters = parameters = Array.AsReadOnly(parameters.ToArray());
+            data.OuterTypeParameters = parameters = parameters.ToArray();
         }
         foreach (var parameter in parameters)
             context.RequireOwned(parameter);

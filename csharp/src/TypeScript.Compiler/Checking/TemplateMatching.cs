@@ -58,7 +58,7 @@ internal sealed class TemplateMatching(TypeContext context, TypeAlgebra algebra,
                     ? s
                     : await algebra.TemplateAsync([Utf8String.Empty, Utf8String.Empty], [s], cancellation).ConfigureAwait(false);
         }
-        return Array.AsReadOnly(result);
+        return result;
     }
 
     private async ValueTask<IReadOnlyList<Type>?> PartsAsync(

@@ -324,8 +324,14 @@ internal sealed class ExpressionContexts(TypeContext context, TypeAlgebra algebr
                 if ((firstSpread < 0 || index < firstSpread) && index < tuple.FixedLength)
                     return values.NonMissing(arguments[index], (tuple.ElementInfos[index].Flags & ElementFlags.Optional) != 0);
                 int offset = length >= 0 && (lastSpread < 0 || index > lastSpread) ? length - index : 0;
-                int endFixed = offset > 0 && (tuple.CombinedFlags & ElementFlags.Variable) != 0
-                    ? tuple.ElementInfos.Reverse().TakeWhile(e => (e.Flags & ElementFlags.Fixed) != 0).Count() : 0;
+                // Trailing fixed-element count: a reverse scan instead of the Reverse/TakeWhile
+                // LINQ chain, which allocated two iterators on every spread-past-element query.
+                int endFixed = 0;
+                if (offset > 0 && (tuple.CombinedFlags & ElementFlags.Variable) != 0)
+                    for (int fixedIndex = tuple.ElementInfos.Count - 1;
+                        fixedIndex >= 0 && (tuple.ElementInfos[fixedIndex].Flags & ElementFlags.Fixed) != 0;
+                        fixedIndex--)
+                        endFixed++;
                 if (offset > 0 && offset <= endFixed)
                     return arguments[arguments.Count - offset];
                 return await tuples.SliceElementAsync(

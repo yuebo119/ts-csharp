@@ -202,8 +202,8 @@ internal sealed class MappedMembers(TypeContext context, TypeAlgebra algebra, Ty
             type.Members = members.AsReadOnly();
             var properties = members.Where(p => Named(p.Key)).Select(p => p.Value).ToArray();
             Array.Sort(properties, order.CompareSymbols);
-            type.Properties = Array.AsReadOnly(properties);
-            type.IndexInfos = Array.AsReadOnly(indexes.ToArray());
+            type.Properties = properties;
+            type.IndexInfos = indexes.ToArray();
 
             async ValueTask AddKeyAsync(Type key)
             {

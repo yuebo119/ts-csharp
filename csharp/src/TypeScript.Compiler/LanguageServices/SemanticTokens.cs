@@ -37,6 +37,7 @@ public sealed partial class LanguageServiceDocument
 
 public static class SemanticTokens
 {
+    // A static legend handed to LSP clients: the wrappers are the immutability boundary.
     public static SemanticTokenLegend SupportedLegend { get; } = new(Array.AsReadOnly<Utf8String>(
         ["namespace"u8, "class"u8, "enum"u8, "interface"u8, "struct"u8, "typeParameter"u8, "type"u8, "parameter"u8, "variable"u8,
         "property"u8, "enumMember"u8, "decorator"u8, "event"u8, "function"u8, "method"u8, "macro"u8, "label"u8, "comment"u8,

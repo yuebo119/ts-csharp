@@ -107,10 +107,10 @@ internal sealed class TupleTypes(TypeContext context, TypeAlgebra algebra, Check
         tuple.AllTypeParameters = (Type[])[.. parameters, thisType];
         tuple.Instantiations = new() { [new TypeCacheKey(parameters)] = tuple };
         tuple.Target = tuple;
-        tuple.ResolvedTypeArguments = Array.AsReadOnly<Type>(parameters);
+        tuple.ResolvedTypeArguments = parameters;
         tuple.DeclaredMembersResolved = true;
         tuple.DeclaredMembers = members.AsReadOnly();
-        tuple.ElementInfos = Array.AsReadOnly(infos.ToArray());
+        tuple.ElementInfos = infos.ToArray();
         tuple.MinLength = minimum;
         tuple.FixedLength = fixedLength;
         tuple.CombinedFlags = combined;
@@ -232,7 +232,7 @@ internal sealed class TupleTypes(TypeContext context, TypeAlgebra algebra, Check
         var arguments = await host.TypeArgumentsAsync(reference, cancellation).ConfigureAwait(false);
         var target = (InterfaceType)reference.ReferencedType;
         int arity = Math.Max(0, target.AllTypeParameters.Count - 1);
-        return arguments.Count == arity ? arguments : Array.AsReadOnly(arguments.Take(arity).ToArray());
+        return arguments.Count == arity ? arguments : arguments.Take(arity).ToArray();
     }
 
     internal async ValueTask<Type?> SliceElementAsync(TypeReference reference, int start, int endSkip = 0, bool writing = false,

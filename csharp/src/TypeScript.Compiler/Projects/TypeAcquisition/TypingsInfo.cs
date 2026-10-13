@@ -13,8 +13,8 @@ public sealed class TypingsInfo : IEquatable<TypingsInfo>
     {
         Acquisition = acquisition with { Include = acquisition.Include?.ToArray(), Exclude = acquisition.Exclude?.ToArray() };
         AllowJavaScript = allowJavaScript;
-        UnresolvedImports = Array.AsReadOnly(unresolvedImports.Distinct(Utf8StringComparer.Ordinal).Order(Utf8StringComparer.Ordinal)
-            .Select(value => Utf8String.Copy(value.Span)).ToArray());
+        UnresolvedImports = unresolvedImports.Distinct(Utf8StringComparer.Ordinal).Order(Utf8StringComparer.Ordinal)
+            .Select(value => Utf8String.Copy(value.Span)).ToArray();
     }
 
     public bool Equals(TypingsInfo? other) => other is not null && AllowJavaScript == other.AllowJavaScript

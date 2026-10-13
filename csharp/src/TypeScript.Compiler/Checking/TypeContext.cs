@@ -250,7 +250,7 @@ public sealed class TypeContext
         var result = new TypeReference(this, ObjectFlags.Reference | flags | PropagatingFlags(arguments), target.Symbol)
         {
             Target = target,
-            ResolvedTypeArguments = Array.AsReadOnly(arguments.ToArray())
+            ResolvedTypeArguments = arguments.ToArray()
         };
         cache.Add(key, result);
         return result;
@@ -370,9 +370,9 @@ public sealed class TypeContext
     }
 
     // Signatures are created per declaration, and most carry no type parameters; a shared empty
-    // wrapper keeps those off the allocation path instead of one ReadOnlyCollection per signature.
-    private static readonly IReadOnlyList<TypeParameter> EmptyTypeParameters = Array.AsReadOnly(Array.Empty<TypeParameter>());
-    private static readonly IReadOnlyList<Symbol> EmptySignatureParameters = Array.AsReadOnly(Array.Empty<Symbol>());
+    // array keeps those off the allocation path instead of one collection per signature.
+    private static readonly IReadOnlyList<TypeParameter> EmptyTypeParameters = Array.Empty<TypeParameter>();
+    private static readonly IReadOnlyList<Symbol> EmptySignatureParameters = Array.Empty<Symbol>();
 
     internal Signature NewSignature(SignatureFlags flags, SyntaxNode? declaration, ReadOnlySpan<TypeParameter> typeParameters,
         Symbol? thisParameter, ReadOnlySpan<Symbol> parameters, Type? returnType, TypePredicate? predicate, int minimumArgumentCount)
@@ -387,9 +387,9 @@ public sealed class TypeContext
         {
             Flags = flags,
             Declaration = declaration,
-            TypeParameters = typeParameters.Length == 0 ? EmptyTypeParameters : Array.AsReadOnly(typeParameters.ToArray()),
+            TypeParameters = typeParameters.Length == 0 ? EmptyTypeParameters : typeParameters.ToArray(),
             ThisParameter = thisParameter,
-            Parameters = parameters.Length == 0 ? EmptySignatureParameters : Array.AsReadOnly(parameters.ToArray()),
+            Parameters = parameters.Length == 0 ? EmptySignatureParameters : parameters.ToArray(),
             ResolvedReturnType = returnType,
             ResolvedTypePredicate = predicate,
             MinArgumentCount = minimumArgumentCount

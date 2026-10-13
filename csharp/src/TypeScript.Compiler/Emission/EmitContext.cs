@@ -240,6 +240,6 @@ public sealed class EmitHelper(Utf8String name, Utf8String importName, Utf8Strin
     public Utf8String Text { get; } = text;
     public bool Scoped { get; } = scoped;
     public int? Priority { get; } = priority;
-    public IReadOnlyList<EmitHelper> Dependencies { get; } = Array.AsReadOnly(dependencies?.ToArray() ?? []);
+    public IReadOnlyList<EmitHelper> Dependencies { get; } = dependencies?.ToArray() ?? [];
     public Func<Func<Utf8String, Utf8String>, Utf8String>? TextFactory { get; } = textFactory;
 }

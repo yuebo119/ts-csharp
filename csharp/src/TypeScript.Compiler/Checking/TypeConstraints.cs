@@ -504,6 +504,6 @@ internal sealed class TypeConstraints(TypeContext context, TypeAlgebra algebra, 
                     cancellation).ConfigureAwait(false)
                     ?? throw new InvalidOperationException("Type argument default instantiation returned no type");
         }
-        return Array.AsReadOnly(result);
+        return result;
     }
 }

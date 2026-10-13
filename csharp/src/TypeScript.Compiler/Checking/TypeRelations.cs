@@ -283,7 +283,7 @@ internal sealed class RelationOperation(
     internal void ExplainArguments(DiagnosticCode code, params object[] arguments)
     {
         if (ReportErrors)
-            Explanation = new(code, Next: Explanation, Arguments: Array.AsReadOnly(arguments));
+            Explanation = new(code, Next: Explanation, Arguments: arguments);
     }
 
     internal async ValueTask<Ternary> WithoutErrorsAsync(Func<ValueTask<Ternary>> compare)

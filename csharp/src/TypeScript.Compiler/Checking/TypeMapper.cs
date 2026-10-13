@@ -181,8 +181,8 @@ internal abstract class TypeMapper
 
     private sealed class Direct(Type[] sources, Type[] targets) : TypeMapper
     {
-        internal IReadOnlyList<Type> SourceTypes { get; } = Array.AsReadOnly(sources);
-        internal IReadOnlyList<Type> TargetTypes { get; } = Array.AsReadOnly(targets);
+        internal IReadOnlyList<Type> SourceTypes { get; } = sources;
+        internal IReadOnlyList<Type> TargetTypes { get; } = targets;
         internal override TypeMapperKind Kind => TypeMapperKind.Array;
         internal override bool MapsThisOnly => sources is [TypeParameter { IsThisType: true }];
 

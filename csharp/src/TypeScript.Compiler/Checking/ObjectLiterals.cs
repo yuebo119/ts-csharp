@@ -68,8 +68,7 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
         var symbol = symbols.Declaration(node);
         if (node.Properties is null or { Count: 0 } && symbol?.Exports.Count > 0)
             return await spreads.ObjectAsync(symbol, new(symbol.Exports), [], JsLiteral(node) ? ObjectFlags.JSLiteral : 0,
-                cancellation).ConfigureAwait(false);
-        host.DeferExpression(node);
+                cancellation).ConfigureAwait(false);        host.DeferExpression(node);
         bool destructuring = ReferenceSyntax.AssignmentTarget(node) is not null;
         await GrammarAsync(node, destructuring, cancellation).ConfigureAwait(false);
         return await contexts.CachedAsync(node, async () =>
@@ -77,8 +76,9 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
             // `all` answers spread-override questions and `ordered` feeds index signatures or the
             // spread path; a literal with neither spread nor computed name never reads either one, so
             // both stay unallocated for the common case.
-            Dictionary<Utf8String, Symbol>? all = null;
-            var table = new Dictionary<Utf8String, Symbol>();
+            SymbolTable? all = null;
+            // The property count is the table's exact final size unless a spread resets it.
+            var table = new SymbolTable(node.Properties!.Count);
             bool needsOrdered = HasSpreadOrComputedName(node);
             List<Symbol>? ordered = needsOrdered ? [] : null;
             Type spreadType = context.EmptyObjectType;
@@ -163,7 +163,7 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
                             isConst,
                             cancellation).ConfigureAwait(false);
                         orderedBeforeSpread.Clear();
-                        table = new(Utf8StringComparer.Ordinal);
+                        table = new();
                         stringKey = numberKey = symbolKey = false;
                     }
                     var type = await views.ReducedAsync(
@@ -181,7 +181,7 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
                             // so `all` is materialized from `ordered` at exactly this point.
                             if (all is null)
                             {
-                                all = new(Utf8StringComparer.Ordinal);
+                                all = new();
                                 foreach (var property in ordered!) all[property.Name] = property;
                             }
                             foreach (var right in await properties.GetAsync(type, cancellation).ConfigureAwait(false))
@@ -254,7 +254,7 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
                         isConst,
                         cancellation).ConfigureAwait(false);
                     orderedBeforeSpread.Clear();
-                    table = new(Utf8StringComparer.Ordinal);
+                    table = new();
                     stringKey = numberKey = false;
                 }
                 return (await algebra.MapAsync(spreadType, async part => part == context.EmptyObjectType
@@ -397,7 +397,7 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
     private async ValueTask<Type> RegularCoreAsync(Type type, CancellationToken cancellation)
     {
         var resolved = await members.ResolveAsync((StructuredType)type, cancellation).ConfigureAwait(false);
-        var table = new Dictionary<Utf8String, Symbol>();
+        var table = new SymbolTable(resolved.Properties!.Count);
         foreach (var property in resolved.Properties!)
         {
             var original = await values.GetAsync(property, cancellation).ConfigureAwait(false);
