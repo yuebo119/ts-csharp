@@ -25,12 +25,12 @@
 
 | 指标 | 预算【草案】 | 锚点实测 | 测量口径 |
 | --- | --- | --- | --- |
-| 真实工程 CLR 总分配 | ≤ 1,050 MB（全量 check + emit 口径，r34 重设；旧线 ≤480 MB 测于 check 恢复态，见 §1 注记） | 1,001.7 MB（r34a 全量态，r32 同程序 1,005.1 MB，−0.34%） | 单行 `CLR allocated bytes`（进程总量），同夹具态、**删 outDir 兄弟状态文件**、交错 ≥3 组、带宽 <0.5 MB 才有效（method.md §7.1） |
+| 真实工程 CLR 总分配 | ≤ 1,050 MB（全量 check + emit 口径，r34 重设；旧线 ≤480 MB 测于 check 恢复态，见 §1 注记） | 1,001.8 MB（r34；r32 同程序 1,005.2 MB、r28 1,090.6、naot-svr 1,221.7，全量态累计 −18.0%） | 单行 `CLR allocated bytes`（进程总量），同夹具态、**删 outDir 兄弟状态文件**、交错 ≥3 组、带宽 <0.5 MB 才有效（method.md §7.1） |
 | 分配相对 Go | 待 Go 侧重测后重设（旧锚 x5.2 测于旧夹具态 + r15 口径 Go 峰值，现不可直接除） | — | 同上 + Go 侧 GOGC=off |
-| 重负载墙钟平均（11 负载族）对 Go 默认 | ≤ x1.50 | x1.397（r32 表 AB126b；r28 表 x1.428） | 同批配对中位比值；控制组 medianRatio CI 含 1.0 |
-| 最差单负载 medium-checkers-1 | ≤ x2.20 | x1.943（r32 表 AB126b；r28 表 x2.009） | 同上 |
-| 巨文件 | ≤ x1.55 | x1.368（r32 表 AB126b；r28 表 x1.425） | 同上 |
-| 启动类负载（version/help/empty-project） | ≤ x1.35 | x1.18~1.27（55 ms Main 前地板，substrate 差距，r30 定论不可修） | 同上 |
+| 重负载墙钟平均（11 负载族）对 Go 默认 | ≤ x1.50 | x1.423（r34 表 AB129；r32 表 x1.397，AB132 对批证实 r34≈r32，差为批间漂移） | 同批配对中位比值；控制组 medianRatio CI 含 1.0 |
+| 最差单负载 medium-checkers-1 | ≤ x2.20 | x2.070（r34 表 AB129；r32 表 x1.943） | 同上 |
+| 巨文件 | ≤ x1.55 | x1.393（r34 表 AB129；r32 表 x1.368） | 同上 |
+| 启动类负载（version/help/empty-project） | ≤ x1.35 | x1.22~1.24（r34 表 AB129；r32 表 x1.18~1.27） | 同上 |
 | 产物等价 | 逐字节 100%（25 夹具） | 25/25（r27d/r28） | 退出码 + stdout + 发射文件哈希 |
 | safety 套件 | ≥ 90/95 且失败集合 ⊆ 已知基线集合 | 92/95（失败 = checker-relation-context / npm-process / program-emit，均在基线内） | docs 轮次报告口径 |
 | 构建红线 | Release 0 警告 0 错误（含 analyzer 段与 AOT 验证） | 0/0（r28） | `csharp/` 下 `dotnet build TypeScript.slnx -c Release` |
