@@ -149,13 +149,15 @@ public sealed partial class IncrementalProgram
         if (options.SourceFiles is null && BuildInfoFileName.Length != 0 && !Program.IsEmitBlocked(BuildInfoFileName))
         {
             var info = CreateBuildInfo();
-            byte[] bytes = info.ToJson();
             var packages = Program.Configuration.FileName.Length == 0 ? [] : Program.ExistingPackageJsons;
             var missingPackages = Program.Configuration.FileName.Length == 0 ? [] : Program.MissingPackageJsons;
             bool changed = snapshot.HasErrors != info.Errors || snapshot.SemanticErrors != info.SemanticErrors
                 || !snapshot.PackageJsons.SequenceEqual(packages) || !snapshot.MissingPackageJsons.SequenceEqual(missingPackages);
             if (snapshot.BuildInfoPending || changed)
             {
+                // Serializing the whole build info (file tables, signatures, encoded diagnostics)
+                // is only needed when it is actually written; an unchanged round skips it.
+                byte[] bytes = writeBuildInfo is null ? info.ToJson() : [];
                 cancellation.ThrowIfCancellationRequested();
                 try
                 {
