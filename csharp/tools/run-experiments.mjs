@@ -36,6 +36,7 @@ const reference = oracle
     : JSON.parse(await readFile(path.join(output, "reference.json"), "utf8"));
 const referenceSource = oracle ?? path.join(output, reference.sourceRelativePath ?? "oracle-source");
 const probeDirectory = path.join(referenceSource, "tsc/cmd/rewrite-probe");
+await mkdir(probeDirectory, { recursive: true });
 await copyFile(path.join(root, "csharp/oracle/main.go"), path.join(probeDirectory, "main.go"));
 const suffix = process.platform === "win32" ? ".exe" : "";
 const probe = path.join(output, "oracle-probe" + suffix);
