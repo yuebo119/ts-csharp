@@ -28,10 +28,13 @@ const variant = "-host";
 const nativeOutput = path.join(output, "native" + variant);
 const resultsPath = path.join(output, `experiments${variant}.json`);
 const rid = `${process.platform === "win32" ? "win" : process.platform === "darwin" ? "osx" : process.platform}-${process.arch}`;
-if (await run("git", ["rev-parse", "HEAD"]) !== referenceRevision) throw new Error("Reference revision changed");
-await run(process.execPath, [path.join(root, "csharp/tools/generate-schema.mjs"), "--check"]);
-const reference = JSON.parse(await readFile(path.join(output, "reference.json"), "utf8"));
-const referenceSource = path.join(output, reference.sourceRelativePath ?? "oracle-source");
+const oracle = option("--oracle");
+if (!oracle && await run("git", ["rev-parse", "HEAD"]) !== referenceRevision) throw new Error("Reference revision changed");
+await run(process.execPath, [path.join(root, "csharp/tools/generate-schema.mjs"), "--check", ...(oracle ? ["--schema", path.join(oracle, "tools/scripts/tsc/ast.json")] : [])]);
+const reference = oracle
+    ? { sourceRelativePath: path.relative(output, oracle), externalOracle: true, revision: referenceRevision }
+    : JSON.parse(await readFile(path.join(output, "reference.json"), "utf8"));
+const referenceSource = oracle ?? path.join(output, reference.sourceRelativePath ?? "oracle-source");
 const probeDirectory = path.join(referenceSource, "tsc/cmd/rewrite-probe");
 await copyFile(path.join(root, "csharp/oracle/main.go"), path.join(probeDirectory, "main.go"));
 const suffix = process.platform === "win32" ? ".exe" : "";
@@ -80,7 +83,7 @@ const files = [];
 const paths = ["tsc/testdata/fixtures/compiler/checker.ts", "tsc/testdata/tests/cases/compiler/assignmentCompat1.ts"];
 for (const file of paths) {
     // Missing fixtures must not silently reduce coverage.
-    files.push({ name: file, text: (await readFile(path.join(root, file))).toString("base64") });
+    files.push({ name: file, text: (await readFile(path.join(oracle ?? root, file))).toString("base64") });
 }
 for (
     const [name, text] of [
