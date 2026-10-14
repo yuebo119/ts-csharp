@@ -203,6 +203,8 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
         // and an enabled map; otherwise the writer keeps just its O(1) line-start state.
         output.TrackLineStarts = map is not null && sourceFile is not null && !mapsDisabled;
         containerPos = containerEnd = declarationListContainerEnd = -1;
+        columnSource = null;
+        columnLine = columnOffset = columnValue = 0;
         if (sourceFile is not null && map is not null && !mapsDisabled)
         {
             sourceIndex = map.AddSource(sourceFile.FileName);
@@ -425,8 +427,28 @@ public sealed partial class SyntaxPrinter(PrinterOptions? options = null, EmitCo
         }
         int end = Math.Min(position, source.Length);
         var (line, _) = source.GetLineAndCharacter(end);
-        int column = EmitTextWriter.Utf16Length(source.Text.Span[source.LineStarts[line]..end]) + position - end;
+        int column = SourceColumn(source, line, end) + position - end;
         sourceMap.AddSourceMapping(writer.Line, writer.Column, index, line, column);
+    }
+
+    // Source positions advance with the print, so the column scan continues from the previous
+    // mapping on the same line instead of rescanning from the line start every time.
+    private SourceText? columnSource;
+    private int columnLine, columnOffset, columnValue;
+
+    private int SourceColumn(SourceText source, int line, int end)
+    {
+        int lineStart = source.LineStarts[line];
+        if (!ReferenceEquals(columnSource, source) || line != columnLine || end < columnOffset)
+        {
+            columnSource = source;
+            columnLine = line;
+            columnOffset = lineStart;
+            columnValue = 0;
+        }
+        columnValue += EmitTextWriter.Utf16Length(source.Text.Span[columnOffset..end]);
+        columnOffset = end;
+        return columnValue;
     }
 
     private int SkipTrivia(int position)

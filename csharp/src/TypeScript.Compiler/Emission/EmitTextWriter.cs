@@ -13,6 +13,9 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
     private int lineStart;
     private bool atLineStart = true;
     private bool carriageReturn;
+    // UTF-16 units appended since lineStart. Maintained inside the tracking loop so Column is O(1)
+    // instead of rescanning the line on every source-map position.
+    private int column;
 
     /// <summary>
     /// True while the caller reads <see cref="Line"/> or <see cref="Column"/>, which only source
@@ -26,7 +29,7 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
     public int Indentation { get; private set; }
     public bool AtLineStart => !inlineDisplay && atLineStart;
     public bool HasTrailingComment { get; private set; }
-    public int Column => atLineStart ? Indentation * indentSize : Utf16Length(text.WrittenSpan[lineStart..]);
+    public int Column => atLineStart ? Indentation * indentSize : column;
     public Utf8String Text => text.ToUtf8String();
 
     // The emit writer is never appended to after the file text is taken, so it can hand its
@@ -48,7 +51,7 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
     public void Clear()
     {
         text.Clear();
-        lineStart = Line = Indentation = 0;
+        lineStart = Line = Indentation = column = 0;
         atLineStart = true;
         carriageReturn = HasTrailingComment = false;
     }
@@ -61,7 +64,12 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
             return;
         if (atLineStart)
         {
-            if (!inlineDisplay) text.Append((byte)' ', checked(Indentation * indentSize));
+            if (!inlineDisplay)
+            {
+                int indentation = checked(Indentation * indentSize);
+                text.Append((byte)' ', indentation);
+                column += indentation;
+            }
             atLineStart = false;
         }
         RawWrite(value);
@@ -94,24 +102,36 @@ public sealed class EmitTextWriter(Utf8String newLine = default, int indentSize 
                 {
                     position++;
                     if (ascii == (byte)'\n' && carriageReturn)
+                    {
                         lineStart = start + position;
+                        column = 0;
+                    }
                     else if (ascii is (byte)'\r' or (byte)'\n')
                     {
                         Line++;
                         lineStart = start + position;
+                        column = 0;
                     }
+                    else
+                        column++;
                     carriageReturn = ascii == (byte)'\r';
                     continue;
                 }
                 int point = Wtf8.Decode(value[position..], out int width);
                 position += width;
                 if (point == '\n' && carriageReturn)
+                {
                     lineStart = start + position;
+                    column = 0;
+                }
                 else if (point is '\r' or '\n' or 0x2028 or 0x2029)
                 {
                     Line++;
                     lineStart = start + position;
+                    column = 0;
                 }
+                else
+                    column += point > 0xFFFF ? 2 : 1;
                 carriageReturn = point == '\r';
             }
         }
