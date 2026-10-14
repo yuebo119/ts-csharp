@@ -59,6 +59,7 @@
 | 类型节点解析消冗余容器与 LINQ（NodesAsync 精确数组、Local 去包装、别名实参四拷→一拷、条件类型去 LINQ） | `TypeNodes`/`TypeReferences`/`TypeParameterScopes`/`TypeContext`/`Types`（4eca9f8） | check 分配：medium −0.7~1.8%、dtsheavy −1.5~2.7%；Types 计数不变 |
 | 打印器列号增量维护（生成侧 O(1) 列、源侧单调推进缓存） | `EmitTextWriter`/`SyntaxPrinter`（f4fd9a3） | longline（单行 65 万字节 + sourceMap）emit summed 2.60→1.29 s（−50%）、总墙钟 5.43→3.96 s（−27%）；medium/huge 噪声内 |
 | safety 套件默认 harness 路径修复（旧值指已删除的外仓布局，首次直跑必假红） | `csharp/tools/run-safety-suite.mjs`（a568797） | 不传参直跑：90/93、失败集合等于文档基线、content-mappers 通过 |
+| 验证设施入库：夹具生成器 + 逐字节门禁 + 确定性测量（本轮全部数字可由这三支脚本复现） | `csharp/tools/perf-fixtures.mjs`、`perf-verify.mjs`、`perf-measure.mjs` | `perf-verify --label pre/post` 端到端 BYTECHECK-OK（6 夹具）；`perf-measure` 复现 medium 全量与 inc512 空转数字 |
 
 本轮证伪（数据留档，勿重提案）：
 
@@ -72,7 +73,7 @@
 | 配方（recipe）token 切点缓存 | 收益面窄：容器免分配路径已覆盖多数节点，recipe 扫描不分配；缓存键须处理切片文本，风险大于收益 |
 | `IncrementalSnapshot.Copy` 惰性化 | 量级不足：512 文件 ~60 KB/轮，万级文件 ~1 MB/轮，COW 改造风险不成比例 |
 | 巨文件打印工作栈容量按节点数预置 | 峰值栈深实测（临时探针，已还原）：huge 65,575 parts（64 B/个 ≈ 4 MB 链）、longline 60,017、medium 102；huge 打印 76.6 MB 分配为弥散构成（输出缓冲按源长预置 + 映射存储 + 映射 JSON + 部件流转），栈链占比 ~5%，低于投入线 |
-| 诊断分组一次成型（触发条件已建立） | 新夹具 errdense（200 文件 × 25 个类型错误 = 5,000 诊断，含 clean 双胞胎；生成器 `built/fresh-2026-10-14/gen-fixtures.mjs`）实测：相对 clean 双胞胎，进程分配 +58.7 MB（+25%，≈12 KB/诊断）、check CPU +25%，**墙钟无可测差异**（2.33/2.47 s vs 2.50/2.15 s）。该密度下诊断管线（分组/排序/去重/打印）不构成墙钟瓶颈，维持推迟；夹具已入库，未来错误形态成为目标负载时直接可用 |
+| 诊断分组一次成型（触发条件已建立） | 新夹具 errdense（200 文件 × 25 个类型错误 = 5,000 诊断，含 clean 双胞胎；生成器 `csharp/tools/perf-fixtures.mjs`，`perf-measure --fixture errdense` 可复现）实测：相对 clean 双胞胎，进程分配 +58.7 MB（+25%，≈12 KB/诊断）、check CPU +25%，**墙钟无可测差异**（2.33/2.47 s vs 2.50/2.15 s）。该密度下诊断管线（分组/排序/去重/打印）不构成墙钟瓶颈，维持推迟；夹具已入库，未来错误形态成为目标负载时直接可用 |
 
 ## 表2 明确不做（否决必留数据，防下轮重提案）
 
