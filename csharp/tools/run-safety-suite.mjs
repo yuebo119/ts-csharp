@@ -2,7 +2,7 @@
 // 逐个运行 Compatibility 旗标与 --content-mappers，失败集合必须落在文档基线内
 // （docs/csharp-perf-report-r15/r17 与 docs/csharp-perf-audit-epsl-1.md 的口径）。
 // 基线外的失败 = 门禁红。用法：node csharp/tools/run-safety-suite.mjs [--harness <dll>]
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -16,8 +16,15 @@ const option = name => {
 // 文档记载的已知失败基线：npm-process-safety 属环境不稳定类（重试可过）。
 const baseline = new Set(["--checker-relation-context-safety", "--program-emit-safety", "--npm-process-safety"]);
 
+// 仓内构建产物路径（旧外仓布局 built/csharp/build/... 已不存在）。
 const harness = option("--harness")
-    ?? path.join(root, "built/csharp/build/bin/TypeScript.Compatibility/release/TypeScript.Compatibility.dll");
+    ?? path.join(root, "csharp/tests/TypeScript.Compatibility/bin/Release/net11.0/TypeScript.Compatibility.dll");
+try {
+    await access(harness);
+} catch {
+    console.error(`harness not found: ${harness}\n先构建：dotnet build csharp/TypeScript.slnx -c Release（或显式传 --harness）`);
+    process.exit(1);
+}
 const source = await readFile(path.join(root, "csharp/tests/TypeScript.Compatibility/Program.cs"), "utf8");
 const tests = [...new Set([
     ...[...source.matchAll(/args\.Length == 1 && args\[0\] == "(--[^"]+-safety)"u8/g)].map(match => match[1]),
