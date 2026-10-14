@@ -237,26 +237,26 @@ internal sealed class TypeNodes(TypeContext context, CheckerLinks links, Checker
                 var check = await FromNodeAsync(conditional.CheckType!, cancellation).ConfigureAwait(false);
                 var conditionalAlias = Alias(node);
                 var outer = await scopes.OuterAsync(node, cancellation: cancellation).ConfigureAwait(false);
-                var captured = new List<TypeParameter>();
-                foreach (var parameter in outer.Cast<TypeParameter>())
+                // The explicit cast matches Cast<TypeParameter>()'s failure behavior without its iterator.
+                List<TypeParameter>? captured = null;
+                foreach (var parameter in outer)
                     if (conditionalAlias is { TypeArguments.Count: > 0 }
-                        || await objects.PossiblyReferencedAsync(parameter, node, cancellation).ConfigureAwait(false))
-                        captured.Add(parameter);
+                        || await objects.PossiblyReferencedAsync((TypeParameter)parameter, node, cancellation).ConfigureAwait(false))
+                        (captured ??= []).Add((TypeParameter)parameter);
                 var root = new ConditionalRoot(
                     conditional,
                     check,
                     await FromNodeAsync(conditional.ExtendsType!, cancellation).ConfigureAwait(false),
                     check is TypeParameter)
                 {
-                    OuterTypeParameters = captured.Count == 0 ? null : captured.AsReadOnly(),
-                    InferTypeParameters = symbols.Binding(node)?.Get(node)?.Locals.Values.Where(s => (s.Flags & SymbolFlags.TypeParameter) != 0)
-                        .Select(s => scopes.Parameter(symbols.Merger.GetMergedSymbol(s)!)).ToArray(),
+                    OuterTypeParameters = captured?.ToArray(),
+                    InferTypeParameters = InferTypeParameters(node),
                     Alias = conditionalAlias
                 };
                 if (root.InferTypeParameters?.Count == 0)
                     root.InferTypeParameters = null;
                 result = await host.ConditionalAsync(root, cancellation).ConfigureAwait(false);
-                if (captured.Count != 0)
+                if (captured is not null)
                     root.Instantiations = new() { [TypeCacheKey.Instantiation(captured.ToArray(), null, false)] = result };
                 break;
             case ImportTypeNode import:
@@ -327,26 +327,37 @@ internal sealed class TypeNodes(TypeContext context, CheckerLinks links, Checker
     }
 
     internal TypeAlias? Alias(SyntaxNode node)
-        => AliasSymbol(node) is { } symbol ? context.CreateAlias(symbol, scopes.Local(symbol).ToArray()) : null;
+        => AliasSymbol(node) is { } symbol ? context.CreateAlias(symbol, scopes.Local(symbol)) : null;
 
-    internal async ValueTask<Type[]> NodesAsync(IEnumerable<SyntaxNode> nodes, CancellationToken cancellation = default)
+    private IReadOnlyList<TypeParameter>? InferTypeParameters(SyntaxNode node)
     {
-        var result = new List<Type>();
-        foreach (var node in nodes)
-            result.Add(await FromNodeAsync(node, cancellation).ConfigureAwait(false));
-        return result.ToArray();
+        if (symbols.Binding(node)?.Get(node) is not { } binding || binding.Locals.Count == 0)
+            return null;
+        List<TypeParameter>? result = null;
+        foreach (var (_, symbol) in binding.Locals)
+            if ((symbol.Flags & SymbolFlags.TypeParameter) != 0)
+                (result ??= []).Add(scopes.Parameter(symbols.Merger.GetMergedSymbol(symbol)!));
+        return result;
+    }
+
+    internal async ValueTask<Type[]> NodesAsync(NodeList nodes, CancellationToken cancellation = default)
+    {
+        var result = new Type[nodes.Count];
+        for (int i = 0; i < result.Length; i++)
+            result[i] = await FromNodeAsync(nodes[i], cancellation).ConfigureAwait(false);
+        return result;
     }
 
     private async ValueTask<Type> ArrayOrTupleAsync(SyntaxNode node, CancellationToken cancellation)
     {
         bool readOnly = node.Parent is TypeOperatorNode { Operator: K.ReadonlyKeyword };
         var arrayElement = ArrayElementNode(node);
-        var infos = node is TupleTypeNode { Elements: { } elements } ? elements.Select(ElementInfo).ToArray() : [];
+        var infos = node is TupleTypeNode { Elements: { } elements } ? ElementInfos(elements) : [];
         var target = arrayElement is not null ? host.ArrayTarget(readOnly)
             : await tuples.TargetAsync(infos, readOnly, cancellation).ConfigureAwait(false);
         if (target == context.EmptyGenericType)
             return context.EmptyObjectType;
-        if (!infos.Any(i => (i.Flags & ElementFlags.Variadic) != 0)
+        if (!HasVariadic(infos)
             && await host.DeferredReferenceAsync(node, false, cancellation).ConfigureAwait(false))
             return node is TupleTypeNode { Elements.Count: 0 } ? target
                 : await objects.DeferredReferenceAsync(target, node, null, cancellation: cancellation).ConfigureAwait(false);
@@ -358,6 +369,22 @@ internal sealed class TypeNodes(TypeContext context, CheckerLinks links, Checker
             ObjectFlags.FromTypeNode,
             cancellation).ConfigureAwait(false)
             : context.CreateTypeReference((InterfaceType)target, types, ObjectFlags.FromTypeNode);
+    }
+
+    private static TupleElementInfo[] ElementInfos(NodeList elements)
+    {
+        var infos = new TupleElementInfo[elements.Count];
+        for (int i = 0; i < infos.Length; i++)
+            infos[i] = ElementInfo(elements[i]);
+        return infos;
+    }
+
+    private static bool HasVariadic(TupleElementInfo[] infos)
+    {
+        foreach (var info in infos)
+            if ((info.Flags & ElementFlags.Variadic) != 0)
+                return true;
+        return false;
     }
 
     private async ValueTask<Type> RestAsync(SyntaxNode node, CancellationToken cancellation)

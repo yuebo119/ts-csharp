@@ -79,11 +79,11 @@ internal sealed class TypeParameterScopes(TypeContext context, CheckerLinks link
         return result.AsReadOnly();
     }
 
-    internal IReadOnlyList<Type> Local(Symbol symbol, CancellationToken cancellation = default)
+    internal Type[] Local(Symbol symbol, CancellationToken cancellation = default)
     {
         var result = new List<Type>();
         AppendLocal(result, symbol, cancellation);
-        return result.AsReadOnly();
+        return result.ToArray();
     }
 
     private void AppendLocal(List<Type> result, Symbol symbol, CancellationToken cancellation)

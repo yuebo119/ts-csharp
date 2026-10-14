@@ -222,7 +222,7 @@ internal sealed class TypeProperties(TypeContext context, CheckerLinks links, Ch
                         && await SamePropertiesAsync(single, property, cancellation).ConfigureAwait(false))
                         mergedInstantiations = single.Parent is { } parent
                             && (parent.Flags & (S.Class | S.Interface | S.TypeAlias)) != 0
-                            && scopes.Local(parent).Count != 0;
+                            && scopes.Local(parent).Length != 0;
                     else
                     {
                         if (properties is null)

@@ -272,6 +272,13 @@ public sealed class TypeContext
         return new(symbol, arguments);
     }
 
+    internal TypeAlias CreateAlias(Symbol symbol, IReadOnlyList<Type> arguments)
+    {
+        foreach (var argument in arguments)
+            RequireOwned(argument);
+        return new(symbol, arguments);
+    }
+
     // This is the canonicalization step after union normalization. It deliberately
     // does not perform subtype, literal, template, or constrained-variable reduction.
     internal Type GetUnionFromSortedTypes(ReadOnlySpan<Type> types, ObjectFlags flags, TypeAlias? alias = null, Type? origin = null)

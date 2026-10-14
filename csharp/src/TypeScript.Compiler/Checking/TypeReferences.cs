@@ -210,7 +210,7 @@ internal sealed class TypeReferences(TypeContext context, CheckerLinks links, Ch
             }
         }
         return await AliasInstantiationAsync(symbol, await NodeArgumentsAsync(node, cancellation).ConfigureAwait(false),
-            newSymbol is null ? null : context.CreateAlias(newSymbol, aliasArguments!.ToArray()), cancellation).ConfigureAwait(false);
+            newSymbol is null ? null : context.CreateAlias(newSymbol, aliasArguments!), cancellation).ConfigureAwait(false);
     }
 
     internal async ValueTask<Type> AliasInstantiationAsync(Symbol symbol, IReadOnlyList<Type> arguments, TypeAlias? alias = null,
@@ -407,14 +407,14 @@ internal sealed class TypeReferences(TypeContext context, CheckerLinks links, Ch
             IsJs(node), host.IdenticalAsync, cancellation).ConfigureAwait(false);
 
     private ValueTask<Type[]> NodeArgumentsAsync(SyntaxNode node, CancellationToken cancellation)
-        => NodesAsync(Arguments(node) is { } arguments ? arguments : [], cancellation);
+        => Arguments(node) is { } arguments ? NodesAsync(arguments, cancellation) : ValueTask.FromResult(Array.Empty<Type>());
 
-    private async ValueTask<Type[]> NodesAsync(IEnumerable<SyntaxNode> nodes, CancellationToken cancellation)
+    private async ValueTask<Type[]> NodesAsync(NodeList nodes, CancellationToken cancellation)
     {
-        var result = new List<Type>();
-        foreach (var node in nodes)
-            result.Add(await host.TypeFromNodeAsync(node, cancellation).ConfigureAwait(false));
-        return result.ToArray();
+        var result = new Type[nodes.Count];
+        for (int i = 0; i < result.Length; i++)
+            result[i] = await host.TypeFromNodeAsync(nodes[i], cancellation).ConfigureAwait(false);
+        return result;
     }
 
     private bool NoArguments(SyntaxNode node, Symbol symbol)

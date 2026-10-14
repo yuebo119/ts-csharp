@@ -42,6 +42,13 @@ public sealed class TypeAlias
         Symbol = symbol;
         TypeArguments = arguments.ToArray();
     }
+
+    // List-shaped callers hand over their view directly; the alias still owns its own copy.
+    internal TypeAlias(Symbol symbol, IReadOnlyList<Type> arguments)
+    {
+        Symbol = symbol;
+        TypeArguments = arguments.ToArray();
+    }
 }
 
 public sealed class IntrinsicType : Type
