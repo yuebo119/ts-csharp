@@ -49,6 +49,28 @@
 | `emitBufferGrow` 分配探针（Utf8StringBuilder.Reserve 扩容分支） | `Diagnostics/AllocationProbes` #39 | r35 |
 | 展开路径尾部定长元数手写倒扫（替 Reverse().TakeWhile().Count() 双迭代器） | `ExpressionContexts.ElementAsync` | r35 |
 
+## 全量重读轮（2026-10-14，独立会话；锚点：本仓 `built/fresh-2026-10-14/` 测量设施与 4 个提交）
+
+已实施（均已过 6 夹具逐字节产物门禁 + Release 0/0；对 Go 锚未重测，维持 r34/r35 带）：
+
+| 项 | 落点 | 数据 |
+| --- | --- | --- |
+| 无变更轮次跳过 buildinfo 构建与序列化（`CurrentErrorFlags` 抽出复用；先判变更后建信息） | `IncrementalProgram.{Emit,BuildInfo}.cs`（f14ff4b、9bc8966） | 空转轮确定性分配：inc512 50.44→49.6 MB、medium 41.25→41.05 MB；medium 空转墙钟 0.639→0.623 s |
+| 类型节点解析消冗余容器与 LINQ（NodesAsync 精确数组、Local 去包装、别名实参四拷→一拷、条件类型去 LINQ） | `TypeNodes`/`TypeReferences`/`TypeParameterScopes`/`TypeContext`/`Types`（4eca9f8） | check 分配：medium −0.7~1.8%、dtsheavy −1.5~2.7%；Types 计数不变 |
+| 打印器列号增量维护（生成侧 O(1) 列、源侧单调推进缓存） | `EmitTextWriter`/`SyntaxPrinter`（f4fd9a3） | longline（单行 65 万字节 + sourceMap）emit summed 2.60→1.29 s（−50%）、总墙钟 5.43→3.96 s（−27%）；medium/huge 噪声内 |
+
+本轮证伪（数据留档，勿重提案）：
+
+| 项 | 证伪数据 |
+| --- | --- |
+| 「多 checker 分配 ×3.3」 | 假象：`Alloc X (summed)` 在并行相位重叠重复计数。进程总量口径：medium 8 checker 315.5 MB vs 1 checker 284.0 MB（+11%），tiny512 245.5 vs 231.7 MB（+6%）。真实代价是 CPU（summed check 2.2 s→3.6~4.0 s）与类型对象（+31%）；墙钟 8 checker 反而 −19%（medium）/持平（tiny512） |
+| 自适应下调 checker 数（小项目 1~4） | 反向：small3（3 文件）默认 8 checker 2.77 s vs `--checkers 1` 3.07 s（比值 1.11）。每 checker 的 lib 推导可并行摊薄，下调反而更慢 |
+| checker 数上调（>8） | tiny512 c8 2972 ms → c32 2789 ms（−6.2%）但 medium c8 2830 → c32 2985 ms（+5.5%）；文件数重负载可作旋钮选项，默认不动 |
+| `S()`/`Scoped()` 元数特化省分配 | 前提不成立：`parts.ToArray()` 即 Parts 容器的唯一必要分配，特化后仍是同一份数组 |
+| 增量轮文件 stat/哈希复用 | 前提不成立：`InitializeAsync` 的哈希是对已解析的内存文本做（不重复读盘）；`-b` 状态检查与初始化的重叠面仅为"比输出更新的文件" |
+| 配方（recipe）token 切点缓存 | 收益面窄：容器免分配路径已覆盖多数节点，recipe 扫描不分配；缓存键须处理切片文本，风险大于收益 |
+| `IncrementalSnapshot.Copy` 惰性化 | 量级不足：512 文件 ~60 KB/轮，万级文件 ~1 MB/轮，COW 改造风险不成比例 |
+
 ## 表2 明确不做（否决必留数据，防下轮重提案）
 
 | 项 | 否决理由（带数据） | 锚点 |
