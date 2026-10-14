@@ -28,11 +28,7 @@ public sealed partial class IncrementalProgram
             MissingPackageJsons = Program.Configuration.FileName.Length == 0 || Program.MissingPackageJsons.Count == 0 ? null : Program.MissingPackageJsons.Select(Relative).ToArray()
         };
         bool incremental = IncrementalOptions.IsIncremental(Options);
-        bool emitErrors = snapshot.EmitDiagnostics.Values.Any(values => values.Count != 0);
-        result.Errors = emitErrors ? !incremental : Program.Configuration.Diagnostics.Length != 0 || Program.Diagnostics.Count != 0
-            || globalDiagnostics.Count != 0 || Program.SourceFiles.Any(file => file.Syntax.ParseDiagnostics.Count != 0 || file.Syntax.JSDiagnostics.Count != 0)
-            || diagnostics?.Any(diagnostic => Program.IncludeDiagnostics.Contains(diagnostic)) == true;
-        result.SemanticErrors = !emitErrors && !result.Errors && !incremental && snapshot.SemanticDiagnostics.Values.Any(values => values.Count != 0);
+        (result.Errors, result.SemanticErrors) = CurrentErrorFlags(incremental);
         if (!incremental)
         {
             result.Root = Program.RootFileNames.Count == 0 ? null : Program.RootFileNames.Select(path => new BuildInfoRoot(0, Name: Relative(path))).ToArray();
@@ -120,5 +116,16 @@ public sealed partial class IncrementalProgram
         result.EmitSignatures = emitSignatures.Count == 0 ? null : emitSignatures.ToArray();
         result.FileNames = names.Count == 0 ? null : names.ToArray();
         return result;
+    }
+
+    /// <summary>The error flags a build info would carry, without building the whole info.</summary>
+    private (bool Errors, bool SemanticErrors) CurrentErrorFlags(bool incremental)
+    {
+        bool emitErrors = snapshot.EmitDiagnostics.Values.Any(values => values.Count != 0);
+        bool errors = emitErrors ? !incremental : Program.Configuration.Diagnostics.Length != 0 || Program.Diagnostics.Count != 0
+            || globalDiagnostics.Count != 0 || Program.SourceFiles.Any(file => file.Syntax.ParseDiagnostics.Count != 0 || file.Syntax.JSDiagnostics.Count != 0)
+            || diagnostics?.Any(diagnostic => Program.IncludeDiagnostics.Contains(diagnostic)) == true;
+        bool semanticErrors = !emitErrors && !errors && !incremental && snapshot.SemanticDiagnostics.Values.Any(values => values.Count != 0);
+        return (errors, semanticErrors);
     }
 }
