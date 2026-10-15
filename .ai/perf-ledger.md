@@ -134,8 +134,12 @@ skipLibCheck 口径校准（2026-10-15 补，比较本报告数字前须对齐�
 | --- | --- | --- |
 | RelationOperation 对象池 | 生命周期/重置清单/尺寸全匹配的池，巨文件墙钟 +2.27~3.04%（三个独立批次重现），分配收益 −4.3 MiB 完全不成比例；机制指向 AOT 对关系调用链的内联/布局扰动（本战役第三个布局敏感样本） | 先解决布局扰动归因（EventPipe 在本机 .NET 11 RC 不可用）；任何触碰关系调用链的改动必须先过隔离巨文件批次 | r27 §2 |
 | 大栈专用检查器线程 | 栈守卫 874,660 次调用零让出；默认 1 MB 与 64 MB 栈结果相同且 +0.33 MB；已回滚 | 无：结论是确定性的 | r23 §4 |
+| 「checker 并行效率不足」三候选：(a) 每 checker 固定构造成本 / (b) 内存带宽或 GC 饱和 / (c) 并行区串行尾巴 | **三条同批全部证伪**（r37 P0，`docs/csharp-perf-plan-r37.md` §3/§4）：(a) checkConstruct 墙钟 ≤55 ms、constructEach 8 checker 求和 0.154 s；(b) 进程分配 c8/c1 仅 +26%（76→96 MB）、GC 暂停 0.06→0.14 s，而 check 线程时间 ×3.4~4.7，且并行效率已 6.6~6.9×；(c) diagnosticsTotal−checkPool = 20~50 ms、globalDiag/fileDiag/affected ≈ 0。**真因是 (d) 每 checker 重复派生（check ×3.39~4.73、emit ×2.73~3.37，parse/bind ×1.0）+ (e) 单文件关键路径** | 翻案前提：先做 §5 L1「共享只读派生缓存」原型；若 L1 落地后净收益仍 <1.3× 再议并行度本身 | r37 §3/§4 |
 
 ## 待勘区（未否决、未做完，勿重复立项评估）
+
+**r37 移交四件（2026-10-15，`docs/csharp-perf-plan-r37.md`）**：①**L1 checker 去重（首位）**——每 checker 重复派生共享结构（全局/lib 作用域 + 惰性类型解析）：官方口径 medium check 线程时间 c1→c8 = 0.52→1.76 s（×3.39）、`partitionSum/checkPool` 并行效率已达 6.6~6.9× 但净收益仅 1.96×；`tiny512`（512 个互不导入文件）同样 ×5.7，证明重复来自每 checker 的全局/lib 解析而非跨文件导入。候选路径：以共享 `Symbol`/`SyntaxNode` 为键的读穿共享只读缓存（原 checkpoint P2-11 的通用化）。预期两口径 Total −13~17%。②**L2 emit 去重（新晋）**——`Emit time (summed)` c1→c8 = 0.44→1.21 s（×2.73），占 c8 Total ~28%；假设是 emit 借池 checker 与「该文件当初的 checker」不亲和、缓存冷而重复派生。**emit 侧当前零探针，先补探针后动工。** ③**L3 单文件关键路径（口径相关）**——夹具默认口径（检查声明文件）下 `lib.dom.d.ts`（110,506 节点，权重 10× 次大文件，`limit=maxWeight` 使其独占一个 checker）检查耗时 = 整个 check 墙钟（medium 1.50 / dtsheavy 1.60 / tiny512 1.42 s）；`huge` 的 `big.ts` 固定 2.87 s。r35 W1–W3 在此获得明确靶点与度量；**单文件内并行切分只留评估、不动工**。④**L4 默认 lib 层固定成本**——Config 0.13 + Program 0.21~0.48 s/进程，对小负载是单进程最大固定项；预解析+预绑定 lib 只读产物。
+**口径纪律（r37 新增，必须遵守）**：官方 harness workload 生成器写死 `skipLibCheck: true, lib: ["es5"]`（`csharp/tools/performance-cli.mjs:50`），本仓 perf 夹具默认不设（`csharp/tools/perf-fixtures.mjs`）——(e) 只在后者可见，(d) 两口径都在。**任何 checker 相位数字必须带口径**，否则不可比。
 
 **r35 移交三件（2026-10-13，`docs/csharp-perf-report-r35.md` §7）**：①W3 字面量形状结构体化（方案主攻）——弹性已放行（AOT huge-file 1:1.1 / medium 1:4.2 / 串行 1:7.6，AB140/AB141 实测矩阵，JIT 臂 1:3.5~1:10.9）、W2 使能器已落地、逐站点分配普查在方案 §4.W3 表；预期 medium −30% 分配 ≈ −7% 墙钟、真实工程侧 ≤3%（普查：字面量族在真实工程 check 相位仅 7.7%）；r27 布局敏感先例覆盖，隔离巨文件批次强制。②W4 closed 整链 + union（union 是 preview 特性，GA 前语法可变；墙钟 <0.5%，正确性动机为主，独立会话执行）。③W5 FrozenDictionary（<0.5%，触碰全局只读表的轮次顺手做，不单独立项）。观测面移交：真实工程下一个有斜率的分配面是关系引擎族（单 checker inclusive relationCompare 185 M / checkerRelated 170 M），受 r27 表3 勿重开约束，除非布局扰动归因先行解决，此面保持关闭。
 
