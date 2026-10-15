@@ -51,6 +51,15 @@ checker 数判定批（每格 3 次中位；墙钟配对复测见账本）：
 
 微基准（与产品同构建属性）：栈守卫 0.6~1.2 ns/次；两级 async 链 7.6~13.7 ns/次（20M 次中位）。
 
+skipLibCheck 校准（本报告全部夹具未设该选项，lib 与 .d.ts 参与检查；此项决定数字的可比口径）：
+
+| 夹具 | skipLibCheck=false | skipLibCheck=true |
+| --- | --- | --- |
+| medium | check 3.86 s summed / 670 MB，总墙钟 2.38 s | check 1.86 s summed / 270 MB，总墙钟 1.13 s |
+| dtsheavy | check 2.53 s summed / 328 MB | check 0.13 s（全部 .d.ts 被跳过），总墙钟 0.72 s |
+
+即：未开 skipLibCheck 时，检查默认 lib 链与 .d.ts 占 medium check 的 ~52%、总墙钟的 ~53%。官方 harness 夹具与真实工程（node_modules 类型）多为此开关的某一侧，比较本报告数字前须先对齐该口径。
+
 ## 证伪清单（数据留档，勿重提案）
 
 | 项 | 证伪数据 |
