@@ -1,9 +1,16 @@
 using TypeScript.Compiler.Ast;
 using TypeScript.Compiler.Diagnostics;
+using TypeScript.Compiler.Text;
 
 namespace TypeScript.Compiler.Emission;
 
 public enum EmitOnly { All, JavaScript, Declarations, BuilderSignature }
+
+/// <summary>
+/// Declaration output a caller already produced for one file, together with the transform's raw
+/// diagnostics. Written verbatim instead of transforming and printing the file a second time.
+/// </summary>
+internal sealed record CachedDeclaration(Utf8String Text, IReadOnlyList<Diagnostic> Diagnostics);
 
 public sealed record EmitOptions
 {
@@ -18,6 +25,12 @@ public sealed record EmitOptions
     /// (measured +3.7% on declarations and +4.7% on tiny-files), while a single large file gains 9.2%.
     /// </summary>
     public bool PipelineDeclarationTransform { get; init; }
+    /// <summary>
+    /// Declaration text produced by the incremental signature pass for this file, reused when the
+    /// same round later emits the file. Only set when no declaration map is requested: that output
+    /// carries its own map and URL suffix, which the cached text does not.
+    /// </summary>
+    internal CachedDeclaration? CachedDeclaration { get; init; }
 }
 
 public sealed record EmitWriteFileData(SourceFileNode SourceFile, int SourceMapUrlPosition = -1,

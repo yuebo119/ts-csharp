@@ -138,11 +138,16 @@ public sealed partial class CompilerProgram
             {
                 bool wantJavaScript = emitOptions.Only is EmitOnly.All or EmitOnly.JavaScript && paths.JavaScript.Length != 0;
                 bool wantDeclaration = emitOptions.Only != EmitOnly.JavaScript && paths.Declaration.Length != 0;
+                // The signature pass already transformed and printed this file's declarations. A
+                // declaration map needs its own print, and a forced emit bypasses the incremental
+                // bookkeeping, so both keep the full path.
+                bool cachedDeclaration = emitOptions.CachedDeclaration is not null && !emitOptions.Force
+                    && options.DeclarationMap != true;
                 bool javascriptBlocked = wantJavaScript && !emitOptions.Force
                     && (options.NoEmit == true || program.IsEmitBlocked(paths.JavaScript));
                 // Starting the second transform on a worker costs a thread hand-off and, for small
                 // files, buys nothing: the two transforms together finish faster than the hand-off.
-                if (wantJavaScript && !javascriptBlocked && wantDeclaration && emitOptions.PipelineDeclarationTransform
+                if (wantJavaScript && !javascriptBlocked && wantDeclaration && !cachedDeclaration && emitOptions.PipelineDeclarationTransform
                     && !emitOptions.Force && source.Statements is { Count: >= ParallelTransformMinStatements }
                     && ScriptTransformer.IsCheckerFree(source, options))
                 {
@@ -178,32 +183,52 @@ public sealed partial class CompilerProgram
                 }
                 if (wantDeclaration)
                 {
-                    var pass = declaration is null
-                        ? await DeclarationPassAsync(paths).ConfigureAwait(false)
-                        : await declaration.ConfigureAwait(false);
-                    var tree = pass.Tree;
-                    bool signature = pass.Signature;
-                    bool skipDeclaration = pass.Skip;
-                    if (skipDeclaration) skipped = true;
-                    // Deferred until the JavaScript print has finished so neither pass mutates the
-                    // shared diagnostic list while the other reads it.
-                    if (javascriptPrint is not null) await javascriptPrint.ConfigureAwait(false);
-                    diagnostics.AddRange(pass.Diagnostics);
-                    if (!skipDeclaration)
+                    if (cachedDeclaration)
                     {
-                        var mapping = program.GetFile(source.FileName)?.Mapping;
-                        var originalName = program.IncludeReasons.GetValueOrDefault(source.FileName)?
-                            .FirstOrDefault(reason => reason.Kind == FileIncludeKind.MapperSupplemental)?.ContainingFile ?? source.FileName;
-                        var printer = new SyntaxPrinter(new()
+                        // Same skip decision DeclarationPassAsync makes for the transform's diagnostics.
+                        var cached = emitOptions.CachedDeclaration!;
+                        bool cachedSkip = options.NoEmit == true || program.IsEmitBlocked(paths.Declaration) || cached.Diagnostics.Count != 0;
+                        if (cachedSkip) skipped = true;
+                        // Deferred until the JavaScript print has finished so neither pass mutates the
+                        // shared diagnostic list while the other reads it.
+                        if (javascriptPrint is not null) await javascriptPrint.ConfigureAwait(false);
+                        diagnostics.AddRange(cached.Diagnostics);
+                        if (!cachedSkip)
                         {
-                            RemoveComments = options.RemoveComments == true, NewLine = NewLine, NoEmitHelpers = true,
-                            TargetYear = options.EmitTargetYear, OnlyPrintJSDocStyle = true, OmitBraceSourceMapPositions = true,
-                            MapSourcePosition = mapping is null ? null : (file, position) => file.FileName != source.FileName
-                                ? new(file.FileName, file.Source, position) : mapping.Map.TryMapExactPosition(position, out int original)
-                                    ? new(originalName, mapping.Original, original) : null
-                        }, pass.Context);
-                        using (CompilationCapture.Measure("print"u8))
-                            await PrintAsync(tree, printer, paths.Declaration, paths.DeclarationMap, !signature && options.DeclarationMap == true, false);
+                            using (CompilationCapture.Measure("print"u8))
+                                await WriteAsync(paths.Declaration, cached.Text,
+                                    new(source, -1, DiagnosticCollection.SortAndDeduplicate(diagnostics)), paths.Declaration);
+                        }
+                    }
+                    else
+                    {
+                        var pass = declaration is null
+                            ? await DeclarationPassAsync(paths).ConfigureAwait(false)
+                            : await declaration.ConfigureAwait(false);
+                        var tree = pass.Tree;
+                        bool signature = pass.Signature;
+                        bool skipDeclaration = pass.Skip;
+                        if (skipDeclaration) skipped = true;
+                        // Deferred until the JavaScript print has finished so neither pass mutates the
+                        // shared diagnostic list while the other reads it.
+                        if (javascriptPrint is not null) await javascriptPrint.ConfigureAwait(false);
+                        diagnostics.AddRange(pass.Diagnostics);
+                        if (!skipDeclaration)
+                        {
+                            var mapping = program.GetFile(source.FileName)?.Mapping;
+                            var originalName = program.IncludeReasons.GetValueOrDefault(source.FileName)?
+                                .FirstOrDefault(reason => reason.Kind == FileIncludeKind.MapperSupplemental)?.ContainingFile ?? source.FileName;
+                            var printer = new SyntaxPrinter(new()
+                            {
+                                RemoveComments = options.RemoveComments == true, NewLine = NewLine, NoEmitHelpers = true,
+                                TargetYear = options.EmitTargetYear, OnlyPrintJSDocStyle = true, OmitBraceSourceMapPositions = true,
+                                MapSourcePosition = mapping is null ? null : (file, position) => file.FileName != source.FileName
+                                    ? new(file.FileName, file.Source, position) : mapping.Map.TryMapExactPosition(position, out int original)
+                                        ? new(originalName, mapping.Original, original) : null
+                            }, pass.Context);
+                            using (CompilationCapture.Measure("print"u8))
+                                await PrintAsync(tree, printer, paths.Declaration, paths.DeclarationMap, !signature && options.DeclarationMap == true, false);
+                        }
                     }
                 }
                 if (javascriptPrint is not null) await javascriptPrint.ConfigureAwait(false);

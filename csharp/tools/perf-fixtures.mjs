@@ -154,6 +154,30 @@ for (const [name, bad] of [["errdense", true], ["errdense-clean", false]]) {
     }, ["src/**/*.ts"]));
 }
 
+// ---- editbig: 64 files x 200 interfaces (~22 KB each), declaration + incremental (edit-round shape)
+{
+    const N = 64, IFACES = 200;
+    for (let i = 0; i < N; i++) {
+        const hasBase = i + 1 < N;
+        const lines = [];
+        if (hasBase) lines.push(`import type { Big${(i + 1) % N}_0 } from "./f${(i + 1) % N}";`);
+        for (let k = 0; k < IFACES; k++) {
+            const ext = hasBase && k === 0 ? ` extends Big${(i + 1) % N}_0` : "";
+            lines.push(`export interface Big${i}_${k}${ext} {`);
+            lines.push(`  kind: string;`);
+            lines.push(`  value: number;`);
+            lines.push(`  label?: string;`);
+            lines.push(`  map: Record<string, Big${i}_${(k + 1) % IFACES}>;`);
+            lines.push(`}`);
+        }
+        write(`editbig/src/f${i}.ts`, lines.join("\n") + "\n");
+    }
+    write("editbig/tsconfig.json", tsconfig({
+        strict: true, target: "es2017", module: "esnext", moduleResolution: "bundler", types: [], rootDir: "src",
+        outDir: "out", declaration: true, incremental: true,
+    }, ["src/**/*.ts"]));
+}
+
 // ---- longline: one file on a single very long line (source-map column shape)
 {
     const parts = [];

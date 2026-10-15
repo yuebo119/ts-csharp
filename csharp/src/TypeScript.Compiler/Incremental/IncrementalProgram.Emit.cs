@@ -10,6 +10,13 @@ namespace TypeScript.Compiler.Incremental;
 
 public sealed partial class IncrementalProgram
 {
+    // Declaration texts produced by this round's signature pass, keyed by file. Populated and reset
+    // on the main thread before the emit loop, read-only while the loop runs, dropped with the round.
+    private Dictionary<Utf8String, CachedDeclaration>? declarationCache;
+
+    private CachedDeclaration? CachedDeclarationFor(Utf8String path, bool declarations)
+        => declarations && declarationCache is { } cache && cache.TryGetValue(path, out var cached) ? cached : null;
+
     public async ValueTask<EmitResult> EmitAsync(EmitOptions? options = null,
         Func<Utf8String, BuildInfo, CancellationToken, ValueTask>? writeBuildInfo = null, CancellationToken cancellation = default)
     {
@@ -98,7 +105,8 @@ public sealed partial class IncrementalProgram
                         results[index] = await Program.EmitWithCheckerAsync(new()
                         {
                             SourceFiles = [file.Syntax], WriteFile = Write,
-                            Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations
+                            Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations,
+                            CachedDeclaration = CachedDeclarationFor(file.Syntax.FileName, declarations)
                         }, lease.Checker, token).ConfigureAwait(false);
                     }).ConfigureAwait(false);
                 }
@@ -113,7 +121,8 @@ public sealed partial class IncrementalProgram
                         EmitOptions fileOptions = new()
                         {
                             SourceFiles = [file.Syntax], WriteFile = Write, PipelineDeclarationTransform = true,
-                            Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations
+                            Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations,
+                            CachedDeclaration = CachedDeclarationFor(file.Syntax.FileName, declarations)
                         };
                         if (checkerPool is { } cached)
                         {
@@ -146,6 +155,7 @@ public sealed partial class IncrementalProgram
             }
             foreach (var path in snapshot.PendingEmit.Keys.Where(path => Program.GetFile(path) is null).ToArray()) snapshot.PendingEmit.Remove(path);
         }
+        declarationCache = null;
         if (options.SourceFiles is null && BuildInfoFileName.Length != 0 && !Program.IsEmitBlocked(BuildInfoFileName))
         {
             var packages = Program.Configuration.FileName.Length == 0 ? [] : Program.ExistingPackageJsons;

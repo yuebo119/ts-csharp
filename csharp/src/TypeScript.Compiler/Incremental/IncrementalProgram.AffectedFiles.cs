@@ -12,6 +12,8 @@ public sealed partial class IncrementalProgram
 {
     private async ValueTask CollectAffectedFilesAsync(CancellationToken cancellation)
     {
+        // The declaration cache outlives this call on purpose: the diagnostics pass collects first
+        // and the emit pass that follows in the same round consumes what it stored. Emit clears it.
         if (snapshot.Changed.Count == 0) return;
         var reverse = new Dictionary<Utf8String, HashSet<Utf8String>>(comparer);
         foreach (var (file, references) in snapshot.References)
@@ -36,15 +38,22 @@ public sealed partial class IncrementalProgram
             if (!useVersion && !file.Syntax.IsDeclarationFile && file.Syntax.ScriptKind != ScriptKind.JSON)
             {
                 signatureChecker ??= await Program.CreateCheckerAsync(cancellation).ConfigureAwait(false);
-                await Program.EmitWithCheckerAsync(new()
+                Utf8String declarationText = default;
+                var result = await Program.EmitWithCheckerAsync(new()
                 {
                     SourceFiles = [file.Syntax], Only = EmitOnly.BuilderSignature,
                     WriteFile = (_, text, data, _) =>
                     {
                         signature = BuildInfoDiagnostics.Signature(path, text, data.SourceMapUrlPosition, data.Diagnostics, hashWithText);
+                        declarationText = text;
                         return ValueTask.CompletedTask;
                     }
                 }, signatureChecker, cancellation).ConfigureAwait(false);
+                // Keep the produced declaration text for this round's emit, which would otherwise
+                // transform and print the same file a second time. Declaration maps carry their own
+                // output and keep the full path.
+                if (declarationText.Length != 0 && Options.DeclarationMap != true)
+                    (declarationCache ??= [])[path] = new(declarationText, result.Diagnostics);
             }
             if (signature.Length == 0) signature = info.Version;
             signatures[path] = signature;
