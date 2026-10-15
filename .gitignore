@@ -1,19 +1,67 @@
-# 构建输出
+# 构建输出（dotnet；built/ 同时覆盖测量夹具与产物目录）
 bin/
 obj/
 artifacts/
 built/
+publish/
 
-# Node
-node_modules/
+# 构建与运行诊断
+*.binlog
+*.log
+*.trx
+*.etl
+*.nettrace
+*.speedscope.json
+*.pb.gz
+*.dmp
+*.gcdump
 
-# 增量状态与探针
-*.tsbuildinfo
-probeout/
-freshalloc/
+# 测试与覆盖率
+TestResults/
+coverage*.json
+coverage*.xml
+*.coverage
+*.dotCover
 
-# 本地工具状态
+# NuGet 包
+*.nupkg
+*.snupkg
+
+# 编辑器与 IDE
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.code-workspace
+
+# 本地工具与代理状态（不入库的本地知识库/会话数据）
 .mimocode/
 .serena/
 .cortex/
 .ai/brain-data/
+
+# 编译器增量状态与探针产物
+*.tsbuildinfo
+probeout/
+freshalloc/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 操作系统噪声
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时与备份文件
+*.tmp
+*.temp
+*.bak
+*~
