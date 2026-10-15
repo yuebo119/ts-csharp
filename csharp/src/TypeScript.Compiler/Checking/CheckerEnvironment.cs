@@ -151,6 +151,7 @@ internal sealed partial class CheckerEnvironment(TypeContext context, CheckerLin
 
     public async ValueTask InitializeGlobalTypesAsync(CheckerSymbols symbols, CancellationToken cancellation)
     {
+        using var capture = CompilationCapture.Measure("phase:globalTypes"u8, traced: false);
         BeforeGlobalTypes?.Invoke();
         await Globals.InitializeAsync(cancellation).ConfigureAwait(false);
     }

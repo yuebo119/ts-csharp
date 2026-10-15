@@ -163,6 +163,7 @@ internal sealed class CheckerSymbols
 
     private async ValueTask InitializeAsync(CancellationToken cancellation)
     {
+        using var capture = CompilationCapture.Measure("phase:globalMerge"u8, traced: false);
         var ambient = new List<Symbol>();
         foreach (var file in program.SourceFiles)
         {

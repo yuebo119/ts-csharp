@@ -1,4 +1,5 @@
 using TypeScript.Compiler.Ast;
+using TypeScript.Compiler.Diagnostics;
 using TypeScript.Compiler.Programs;
 
 namespace TypeScript.Compiler.Checking;
@@ -37,6 +38,7 @@ internal sealed partial class Checker
     internal static async ValueTask<Checker> CreateAsync(CompilerProgram program, CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
+        using var capture = CompilationCapture.Measure("phase:constructEach"u8, traced: false);
         var options = program.Configuration.Options;
         var context = new TypeContext(options.EffectiveStrictNullChecks, options.ExactOptionalPropertyTypes == true);
         using var captured = context.Capture?.Begin("bind"u8, "createChecker"u8, checker: context.TraceRecorder?.Index);

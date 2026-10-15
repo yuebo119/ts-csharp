@@ -19,6 +19,7 @@ public sealed partial class IncrementalProgram
     private async ValueTask<IReadOnlyList<Diagnostic>> GetDiagnosticsCoreAsync(CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
+        using var capture = CompilationCapture.Measure("phase:diagnosticsTotal"u8, traced: false);
         if (diagnostics is not null) return diagnostics;
         List<Diagnostic> result = [.. Program.Configuration.Diagnostics];
         int initial = result.Count;
@@ -32,12 +33,15 @@ public sealed partial class IncrementalProgram
             if (Options.ListFilesOnly != true && Program.SourceFiles.Count != 0)
             {
                 checkerPool ??= await Program.CreateCheckerPoolAsync(Options.SingleThreaded == true, cancellation).ConfigureAwait(false);
+                using (CompilationCapture.Measure("phase:globalDiag"u8, traced: false))
                 using (var lease = await checkerPool.AcquireAsync(cancellation: cancellation).ConfigureAwait(false))
                     globalDiagnostics = lease.Checker.DetailedDiagnosticsForFile(null).ToArray();
                 result.AddRange(globalDiagnostics);
                 if (result.Count == initial && Options.NoCheck != true)
                 {
-                    if (CanUseState) await CollectAffectedFilesAsync(cancellation).ConfigureAwait(false);
+                    if (CanUseState)
+                        using (CompilationCapture.Measure("phase:affected"u8, traced: false))
+                            await CollectAffectedFilesAsync(cancellation).ConfigureAwait(false);
                     var selected = Program.SourceFiles.Where(file => !snapshot.SemanticDiagnostics.ContainsKey(file.Syntax.FileName)).Select(file => file.Syntax).ToHashSet();
                     if (selected.Count != 0)
                     {
@@ -53,15 +57,18 @@ public sealed partial class IncrementalProgram
                         snapshot.BuildInfoPending = true;
                     }
                     if (snapshot.SemanticDiagnostics.Count == Program.SourceFiles.Count) snapshot.CheckPending = false;
-                    foreach (var file in Program.SourceFiles)
+                    using (CompilationCapture.Measure("phase:fileDiag"u8, traced: false))
                     {
-                        var semantic = snapshot.SemanticDiagnostics.GetValueOrDefault(file.Syntax.FileName) ?? [];
-                        if (semantic.Any(diagnostic => diagnostic.FromBuildInfo))
-                            snapshot.SemanticDiagnostics[file.Syntax.FileName] = semantic = semantic
-                                .Select(diagnostic => diagnostic.FromBuildInfo ? Program.RepopulateDiagnostic(diagnostic) : diagnostic).ToArray();
-                        result.AddRange(semantic.Where(diagnostic => Options.NoEmit != true || !diagnostic.SkippedOnNoEmit));
-                        using var lease = await checkerPool.AcquireAsync(file.Syntax, cancellation).ConfigureAwait(false);
-                        result.AddRange(lease.Checker.IncludeDiagnosticsForProgramFile(file.Syntax));
+                        foreach (var file in Program.SourceFiles)
+                        {
+                            var semantic = snapshot.SemanticDiagnostics.GetValueOrDefault(file.Syntax.FileName) ?? [];
+                            if (semantic.Any(diagnostic => diagnostic.FromBuildInfo))
+                                snapshot.SemanticDiagnostics[file.Syntax.FileName] = semantic = semantic
+                                    .Select(diagnostic => diagnostic.FromBuildInfo ? Program.RepopulateDiagnostic(diagnostic) : diagnostic).ToArray();
+                            result.AddRange(semantic.Where(diagnostic => Options.NoEmit != true || !diagnostic.SkippedOnNoEmit));
+                            using var lease = await checkerPool.AcquireAsync(file.Syntax, cancellation).ConfigureAwait(false);
+                            result.AddRange(lease.Checker.IncludeDiagnosticsForProgramFile(file.Syntax));
+                        }
                     }
                     result.AddRange(globalDiagnostics);
                 }

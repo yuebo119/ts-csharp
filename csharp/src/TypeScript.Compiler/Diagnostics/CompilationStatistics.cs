@@ -41,6 +41,12 @@ internal sealed record CompilationStatistics
     internal long[] ProbeOwn { get; init; } = [];
     internal long[] ProbeChildren { get; init; } = [];
     internal long[] ProbeCounts { get; init; } = [];
+    // Named scopes captured by CompilationCapture.Measure under the "phase:" prefix: checker
+    // lifecycle attribution that does not fit the fixed phase list. A parallel region entered
+    // once (the pool boundaries) reads as wall clock; a per-checker or per-file region sums
+    // across instances and reads as total CPU. Allocation is process-wide (indicative when
+    // several checkers overlap). Diagnostics only.
+    internal Dictionary<string, (double Seconds, long Bytes)> NamedPhases { get; init; } = [];
     internal long CommentAdds { get; init; }
     internal long CommentSets { get; init; }
     internal long NodeDataCalls { get; init; }
@@ -124,6 +130,10 @@ internal sealed record CompilationStatistics
                 Time("Probe time " + name, ticks / (double)System.Diagnostics.Stopwatch.Frequency);
             }
         }
+        if (NamedPhases.Count != 0)
+            foreach (var (name, value) in NamedPhases.OrderByDescending(pair => pair.Value.Seconds))
+                rows.Add((name, value.Seconds.ToString("F3", CultureInfo.InvariantCulture) + "s / "
+                    + (value.Bytes / 1024.0 / 1024.0).ToString("F1", CultureInfo.InvariantCulture) + " MB"));
         if (NodeDataCalls != 0)
         {
             Count("EmitContext.NodeData calls", NodeDataCalls);
@@ -157,6 +167,9 @@ internal sealed record CompilationStatistics
             AllocatedProgram = entries.Sum(value => value.AllocatedProgram), AllocatedParse = entries.Sum(value => value.AllocatedParse),
             AllocatedBind = entries.Sum(value => value.AllocatedBind), AllocatedCheck = entries.Sum(value => value.AllocatedCheck),
             AllocatedEmit = entries.Sum(value => value.AllocatedEmit),
+            NamedPhases = entries.SelectMany(value => value.NamedPhases).GroupBy(pair => pair.Key)
+                .ToDictionary(group => group.Key,
+                    group => (group.Sum(pair => pair.Value.Seconds), group.Sum(pair => pair.Value.Bytes))),
             GCPauseTime = entries.Length == 0 ? 0 : entries.Max(value => value.GCPauseTime),
         };
     }

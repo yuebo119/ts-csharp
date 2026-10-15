@@ -1,6 +1,7 @@
 using TypeScript.Compiler.Ast;
 using TypeScript.Compiler.Diagnostics;
 using TypeScript.Compiler.Programs;
+using TypeScript.Compiler.Text;
 
 namespace TypeScript.Compiler.Checking;
 
@@ -37,6 +38,7 @@ internal sealed class CheckerPool
         CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
+        using var capture = CompilationCapture.Measure("phase:checkConstruct"u8, traced: false);
         int count = singleThreaded ? 1 : program.Configuration.Options.Checkers ?? DefaultCheckerCount;
         count = Math.Clamp(count, 1, Math.Max(1, Math.Min(program.SourceFiles.Count, MaximumCheckerCount)));
         var assignments = CheckerPartitions.ForProgram(program, count, cancellation);
@@ -63,26 +65,34 @@ internal sealed class CheckerPool
     {
         var semantic = new IReadOnlyList<Diagnostic>[program.SourceFiles.Count];
         var globals = new IReadOnlyList<Diagnostic>[Count];
+        using var capture = CompilationCapture.Measure("phase:checkPool"u8, traced: false);
         async Task CheckGroupAsync(int index)
         {
             await gates[index].WaitAsync(cancellation);
             using var lease = new Lease(checkers[index], gates[index]);
             // A partition may be empty. Its checker still contributes global diagnostics.
             var checker = checkers[index];
-            foreach (int i in filesByChecker[index])
+            using (CompilationCapture.Measure("phase:partition"u8, traced: false))
+            using (CompilationCapture.Measure(Utf8String.FromString("phase:partition#" + index), traced: false))
             {
-                var file = program.SourceFiles[i].Syntax;
-                if ((selected is null || selected.Contains(file)) && !checker.SkipProgramFile(file))
-                    await checker.CheckSourceFileAsync(file, cancellation);
+                foreach (int i in filesByChecker[index])
+                {
+                    var file = program.SourceFiles[i].Syntax;
+                    if ((selected is null || selected.Contains(file)) && !checker.SkipProgramFile(file))
+                        await checker.CheckSourceFileAsync(file, cancellation);
+                }
             }
             // Later files can add diagnostics to earlier files in the same partition.
-            var diagnostics = checker.GroupDiagnosticsByFile();
-            foreach (int i in filesByChecker[index])
+            using (CompilationCapture.Measure("phase:partitionDiag"u8, traced: false))
             {
-                var file = program.SourceFiles[i].Syntax;
-                semantic[i] = checker.DetailedDiagnosticsForProgramFile(file, diagnostics[file], includeEmitOnly: selected is not null);
+                var diagnostics = checker.GroupDiagnosticsByFile();
+                foreach (int i in filesByChecker[index])
+                {
+                    var file = program.SourceFiles[i].Syntax;
+                    semantic[i] = checker.DetailedDiagnosticsForProgramFile(file, diagnostics[file], includeEmitOnly: selected is not null);
+                }
+                globals[index] = diagnostics[null].ToArray();
             }
-            globals[index] = diagnostics[null].ToArray();
         }
         if (Count == 1)
             await CheckGroupAsync(0);

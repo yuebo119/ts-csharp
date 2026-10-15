@@ -264,23 +264,30 @@ internal sealed class CompilationCapture : IAsyncDisposable
     internal void Instantiated() => Interlocked.Increment(ref instantiations);
 
     internal Scope Begin(Utf8String category, Utf8String name, Utf8String path = default, int? checker = null,
-        uint sourceId = 0, uint targetId = 0, bool sampled = false)    {
+        uint sourceId = 0, uint targetId = 0, bool sampled = false, bool traced = true)
+    {
         if (disposed) return default;
         long start = Stopwatch.GetTimestamp();
         long allocated = GC.GetTotalAllocatedBytes();
-        var token = trace?.Begin(category, name, path, checker, sourceId, targetId, sampled);
+        var token = traced ? trace?.Begin(category, name, path, checker, sourceId, targetId, sampled) : null;
         return new(this, category, start, allocated, token);
     }
 
     /// <summary>Starts a scope for the active capture, or returns a no-op scope when none is active.</summary>
-    internal static Scope Measure(Utf8String category)
+    /// <param name="traced">
+    /// When false, only the duration/allocation counters are collected; no trace duration event is
+    /// emitted. Parallel attribution scopes (the checker lifecycle) must stay untraced: trace lanes
+    /// are keyed by file or checker, and a scope that spans an await would otherwise interleave its
+    /// begin/end pair on the shared default lane of several checkers at once.
+    /// </param>
+    internal static Scope Measure(Utf8String category, bool traced = true)
     {
         var capture = Current;
         if (capture is null) return default;
         // The transform attribution frames are only valid inside the transform scope: rewriters also
         // run while printing, and counting those frames would double-book allocation across phases.
         if (category == "transform"u8) transformDepth.Value++;
-        return capture.Begin(category, category);
+        return capture.Begin(category, category, traced: traced);
     }
 
     private static readonly AsyncLocal<int> transformDepth = new();
@@ -340,6 +347,8 @@ internal sealed class CompilationCapture : IAsyncDisposable
             ProbeChildren = (long[])probeChildren.Clone(),
             ProbeCounts = (long[])probeCounts.Clone(),
             ProbeDurations = (long[])probeDurations.Clone(),
+            NamedPhases = durations.Keys.Where(key => key.Span.StartsWith("phase:"u8))
+                .ToDictionary(key => key.ToString(), key => (Seconds(key), Allocated(key))),
             CommentAdds = Volatile.Read(ref commentAdds), CommentSets = Volatile.Read(ref commentSets),
             NodeDataCalls = Volatile.Read(ref nodeDataCalls), LinkCreates = Volatile.Read(ref linkCreates),
             GCPauseTime = GC.GetTotalPauseDuration().TotalSeconds,
