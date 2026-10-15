@@ -49,7 +49,7 @@
 | `emitBufferGrow` 分配探针（Utf8StringBuilder.Reserve 扩容分支） | `Diagnostics/AllocationProbes` #39 | r35 |
 | 展开路径尾部定长元数手写倒扫（替 Reverse().TakeWhile().Count() 双迭代器） | `ExpressionContexts.ElementAsync` | r35 |
 
-## 全量重读轮（2026-10-14/15，独立会话；原始证据 `docs/csharp-perf-report-fresh-2026-10-14.md`；锚点：入库量具 `csharp/tools/perf-{fixtures,verify,measure}.mjs` 与 7 个提交 f14ff4b…9d87a02）
+## 全量重读轮（2026-10-14/15，独立会话；原始证据 `docs/csharp-perf-report-fresh-2026-10-14.md`；锚点：入库量具 `csharp/tools/perf-{fixtures,verify,measure}.mjs` 与 8 个提交 f14ff4b…e264e59）
 
 已实施（均已过 6 夹具逐字节产物门禁 + Release 0/0；对 Go 锚未重测，维持 r34/r35 带）：
 
@@ -58,6 +58,7 @@
 | 无变更轮次跳过 buildinfo 构建与序列化（`CurrentErrorFlags` 抽出复用；先判变更后建信息） | `IncrementalProgram.{Emit,BuildInfo}.cs`（f14ff4b、9bc8966） | 空转轮确定性分配：inc512 50.44→49.6 MB、medium 41.25→41.05 MB；medium 空转墙钟 0.639→0.623 s |
 | 类型节点解析消冗余容器与 LINQ（NodesAsync 精确数组、Local 去包装、别名实参四拷→一拷、条件类型去 LINQ） | `TypeNodes`/`TypeReferences`/`TypeParameterScopes`/`TypeContext`/`Types`（4eca9f8） | check 分配：medium −0.7~1.8%、dtsheavy −1.5~2.7%；Types 计数不变 |
 | 打印器列号增量维护（生成侧 O(1) 列、源侧单调推进缓存） | `EmitTextWriter`/`SyntaxPrinter`（f4fd9a3） | longline（单行 65 万字节 + sourceMap）emit summed 2.60→1.29 s（−50%）、总墙钟 5.43→3.96 s（−27%）；medium/huge 噪声内 |
+| 增量签名复用声明产物（签名相位与发射相位共享同一次声明变换+打印） | `IncrementalProgram.{AffectedFiles,Emit}.cs`、`Emission/EmitResult.cs`、`Programs/CompilerProgram.Emit.cs`（e264e59） | 编辑轮 editbig（64×22KB 声明+增量）：emit 分配 1452→356 MB（−75%）、emit summed 2.89→1.46 s（−49%）、墙钟 −11~13%（三对交替）；medium 编辑轮：emit 分配 301→102 MB（−66%）、墙钟 −5.3%。逐字节：129/196 产物（含全部 .d.ts 与 tsbuildinfo）全等 |
 | safety 套件默认 harness 路径修复（旧值指已删除的外仓布局，首次直跑必假红） | `csharp/tools/run-safety-suite.mjs`（a568797） | 不传参直跑：90/93、失败集合等于文档基线、content-mappers 通过 |
 | 验证设施入库：夹具生成器 + 逐字节门禁 + 确定性测量（本轮全部数字可由这三支脚本复现） | `csharp/tools/perf-fixtures.mjs`、`perf-verify.mjs`、`perf-measure.mjs` | `perf-verify --label pre/post` 端到端 BYTECHECK-OK（6 夹具）；`perf-measure` 复现 medium 全量与 inc512 空转数字 |
 
