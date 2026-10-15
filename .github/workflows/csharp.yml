@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '24'
       - name: Build (0 warnings 0 errors gate)
-        run: dotnet build csharp/TypeScript.slnx -c Release --artifacts-path built/csharp/build -p:UseSharedCompilation=false
+        run: dotnet build csharp/TypeScript.slnx -c Release -p:UseSharedCompilation=false
       - name: Safety suite (failure set must stay within documented baseline)
         run: node csharp/tools/run-safety-suite.mjs
       - name: Publish NativeAOT product
