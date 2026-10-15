@@ -49,7 +49,7 @@
 | `emitBufferGrow` 分配探针（Utf8StringBuilder.Reserve 扩容分支） | `Diagnostics/AllocationProbes` #39 | r35 |
 | 展开路径尾部定长元数手写倒扫（替 Reverse().TakeWhile().Count() 双迭代器） | `ExpressionContexts.ElementAsync` | r35 |
 
-## 全量重读轮（2026-10-14/15，独立会话；锚点：入库量具 `csharp/tools/perf-{fixtures,verify,measure}.mjs` 与 7 个提交 f14ff4b…9d87a02）
+## 全量重读轮（2026-10-14/15，独立会话；原始证据 `docs/csharp-perf-report-fresh-2026-10-14.md`；锚点：入库量具 `csharp/tools/perf-{fixtures,verify,measure}.mjs` 与 7 个提交 f14ff4b…9d87a02）
 
 已实施（均已过 6 夹具逐字节产物门禁 + Release 0/0；对 Go 锚未重测，维持 r34/r35 带）：
 
