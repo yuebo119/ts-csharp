@@ -1,9 +1,9 @@
 # r39 L1 原型方案：checker 共享只读派生缓存（缓存键与接口签名，待评审）
 
-> **元数据** ｜ 类型: plan ｜ 日期: 2026-10-16 ｜ 轮次: r39（L1 原型设计，未动工）｜ 主题: checker-shared-readonly-derivation-cache
-> 触发: 用户令「为 L1 写原型方案（先出缓存键与接口签名过评审，不动产品代码）」
+> **元数据** ｜ 类型: plan ｜ 日期: 2026-10-16 ｜ 轮次: r39（L1 原型设计）｜ 主题: checker-shared-readonly-derivation-cache
+> 触发: 用户令「为 L1 写原型方案（先出缓存键与接口签名过评审，不动产品代码）」；同日晚用户令「按方案完整优化」，P0 已执行，结论见 §11
 > 关联: `docs/csharp-perf-plan-r37.md` §5 L1（本方案的前身与优先级来源）、`docs/csharp-perf-report-r38.md`（本轮锚点）、`.ai/perf-ledger.md` 待勘区
-> 状态: **待评审**。本文只定义缓存键、接口签名、分期与门禁；任何产品代码改动以评审通过后的单独提交进行。
+> 状态: **P0 已执行并仲裁（§11）：L1 按原设计（符号级共享缓存）无可落地表面，重复派生集中于所有权契约钉死的两族；未动产品代码，临时探针已回退。**
 
 ## 1. 结论摘要
 
@@ -178,3 +178,32 @@ P0 之前不写任何产品代码；P1-A 与 P1-B 各自独立提交、独立回
 2. 计划重放（K2）采用「首 checker 建计划 + 其余重放」还是「独立单线程预计算阶段」？前者零新增相位，后者多一个相位但确定性更强。
 3. K1~K3 是否与 K4 合并为一次原型提交，还是严格按 P1-A/P1-B 分离（本方案倾向分离）？
 4. 收益门槛维持 r37 的 1.3×，还是对 Layer A（构造期）单独设更低门槛（它同时省 100 MB 分配）？
+
+## 11. P0 执行结果与仲裁（2026-10-16 晚，用户令「按方案完整优化」后）
+
+P0 按方案执行：临时 env 闸门探针（`TSHARP_PROBE_FILES`，每文件检查时间 dump，量后已回退，工作树干净）+ 产品已有 inclusive 分配探针的 c1/c8 对比 + skipLibCheck 分解。全部数据真实工程 291 文件图、noEmit、产品配置、每次 fresh copy（避开 composite 状态陷阱），时间类读数取 2 次中位。
+
+### 11.1 每文件分解（c1 热缓存 vs c8 冷缓存）
+
+对齐 81 个文件（c1 dump 前 80 + lib）：固有成本（c1）1,411 ms，冷缓存惩罚（c8−c1）466 ms，**惩罚/固有 = 33%**；c1>20ms 的 11 个重文件：固有 1,009 ms、惩罚 266 ms（26.4%）。最重分区 #1（600 ms，24 文件）= proto.ts 450 ms + factory.generated.ts 99 ms + 小文件，已知固有 474 ms、惩罚 121 ms（**26%**，远超方案 10% 降级线）。
+
+### 11.2 惩罚落在哪个家族（inclusive 分配探针 c8/c1 倍数）
+
+| 家族 | c1 MB | c8 MB | ×8/c1 | 可共享性 |
+| --- | ---: | ---: | ---: | --- |
+| relationCompare / checkerRelated / relRecurse / recStamp / relationRelated / relationProperties | 727（合计，含重叠） | 1,283 | **1.52~1.98** | 钉死：关系结果依赖每 checker Type identity，且关系引擎是 ledger 表3 勿重开（r27 布局敏感） |
+| typeFromNode / symbolTypesGet / variableType | 136 | 241 | **1.46~2.58** | 钉死：产每 checker Type 对象（`StructuredMembers.cs:57` `context.RequireOwned`） |
+| resolveMembers | 109 | 119 | **1.09** | 已共享：r35 W2 已把 checker 成员表统一到绑定期 SymbolTable |
+| objectLiteral / objectMutable / objectProperty / objectCheckExpr | 139 | 153 | **1.11~1.16** | 已共享或本就不重复 |
+
+### 11.3 仲裁
+
+1. **K4 的原定靶点（符号级投影：成员表/导出表/别名解析）没有表面**：`resolveMembers` ×1.09、object 族 ×1.11~1.16，符号级派生已被 r35 W2（成员表统一 Binding.SymbolTable）与绑定期共享吃掉。K1~K3（构造期）同向：`constructEach` 0.021 s + `globalMerge` 0.019 s（c8 合计 40 ms 线程量，墙钟上限 ~2 ms），实现它们是礼仪性改动，按战役纪律（<5% 默认不做）不实施。
+2. **26% 的惩罚全部集中在被两道契约钉死的两族**：关系引擎（表3 勿重开 + 布局敏感 + 结果含每 checker Type）与 typeFromNode（ownership 契约）。跨 checker 共享它们等于共享 Type 对象，违反 `Checker.cs:10-13`「exclusive checker owns semantic state」与 `CheckerSymbols.cs:46-47`「A checker owns these tables」两条既有契约，且诊断等价面（别名解析带位置相关诊断副作用）未解决。
+3. **结论：L1 按原设计不立项**。不是收益不够大（理论墙钟价值 ~10%），而是可共享面与已兑现面之间的差为零。r37 的 ×3.39~4.73 是 10-15 机器态/夹具形态未定位的读数，不能作为立项依据。
+4. **剩余杠杆按实测价值排序**（均需单独决策，不在本方案范围）：
+   - **L3-a 分区重量化**：最重分区 600 ms vs 均值 253 ms，若重量与检查成本成比例，checkPool 墙钟 0.685 → ~0.50 s（真实工程 Total −14~18%）。障碍：`CheckerPartitions.cs:8` 注明「Calibrated by the reference compiler; changing these changes checker ownership」，改动即与参考实现分叉，需用户裁决。
+   - **L3-b 重文件每节点成本**：proto.ts 单文件 450 ms（固有 354 + 惩罚 95），是 r35 W3 家族（字面量形状结构体化等）的靶点，月级工作。
+   - **L4 lib 预绑定**：真实工程 Program time 0.267 s，占 Total ~20%。
+   - **关系引擎本身**：最大单一分配家族（c1 172 MB inclusive），受表3 约束，除非布局扰动归因先行解决。
+5. **临时探针已回退**（`git checkout` 恢复 CheckerPool.cs，工作树干净）；本方案未产生任何产品代码改动。
