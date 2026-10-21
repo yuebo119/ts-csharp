@@ -54,7 +54,7 @@
 
 ## 5. 三个未探测候选的展开
 
-三者的共同风险与门禁：必须保持对 tsc 基线的输出等价（25 夹具逐字节门禁 + safety 套件）；TS2589/TS2859 实例化预算与诊断顺序是可观测行为，缓存只能覆盖"没建新类型、没实例化、没诊断"的调用（tsrs 的纯净性条件）；in-progress 标记可复用 `IndexedTypes.simplified` 的循环占位模式；实施时按 r27 纪律先过隔离巨文件批次。三者都是 checker 内缓存，不引入跨 checker 共享，与 L1 被钉死的所有权契约不冲突。
+三者的共同风险与门禁：必须保持对 tsc 基线的输出等价（25 夹具逐字节门禁 + safety 套件）；TS2589/TS2859 实例化预算与诊断顺序是可观测行为，缓存只能覆盖"没建新类型、没实例化、没诊断"的调用（tsrs 的纯净性条件；r40 把"没实例化"细化为 `TotalCount`/`InstantiationLimit`/`ConditionalDepthExceeded` 三差，见 `docs/csharp-perf-plan-r40.md` §13.7）；in-progress 标记可复用 `IndexedTypes.simplified` 的循环占位模式；实施时按 r27 纪律先过隔离巨文件批次。三者都是 checker 内缓存，不引入跨 checker 共享，与 L1 被钉死的所有权契约不冲突。
 
 ### 5.1 infer memo（最优先）
 
