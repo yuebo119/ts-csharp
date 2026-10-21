@@ -1,6 +1,6 @@
 # typescript-csharp
 
-TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、绑定、类型检查、发射与语言服务，产物与参考实现逐字节一致，可 NativeAOT 发布。仓库自 hez2010/TypeScript 的 `f29aeb9f` 处独立，git 历史仅保留 C# 工作的提交（作者、日期与提交信息逐字保留），上游 TypeScript/JavaScript 与 Go 实现的历史不在本仓库。
+TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、绑定、类型检查、发射与语言服务，产物与参考实现逐字节一致，可 NativeAOT 发布。本仓库是 [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs) `typescript-cs` 分支的优化版，自该分支的 `f29aeb9f` 处独立，此后的性能优化与质量工作主要使用 DeepSeek V4.1 Flash 完成；git 历史仅保留 C# 工作的提交（作者、日期与提交信息逐字保留），上游 TypeScript/JavaScript 与 Go 实现的历史不在本仓库。
 
 - 编译器库约 18 万行、834 个 C# 文件，覆盖 tsc 的四个阶段与全部语言服务面
 - Release 构建在 analyzer 与 AOT 兼容验证全开、警告视为错误的配置下 0 警告 0 错误
@@ -15,6 +15,7 @@ TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、
 - [仓库结构](#仓库结构)
 - [编译器如何工作](#编译器如何工作)
 - [兼容性与验证](#兼容性与验证)
+- [背景与同类项目](#背景与同类项目)
 - [已知边界](#已知边界)
 - [许可证](#许可证)
 
@@ -115,6 +116,32 @@ flowchart LR
 - **安全套件**：`node csharp/tools/run-safety-suite.mjs` 逐个运行 93 个 `--*-safety` 旗标，失败集合须落在文档基线内。
 - **确定性测量**：`node csharp/tools/perf-measure.mjs --fixture <夹具> --binary <目录> --runs N` 输出分阶段时间、分配字节与类型计数，可多二进制对照。
 - **证据归档**：`csharp/compatibility/evidence/` 保存诊断枚举校验、增量检查器复用等机器可读证据。
+
+## 背景与同类项目
+
+### Anders 当年为什么不选 C#
+
+2025 年初，微软宣布把 TypeScript 编译器从 TypeScript 移植成原生代码，选的是 Go。官方 Why Go? 讨论帖（[microsoft/typescript-go#411](https://github.com/microsoft/typescript-go/discussions/411)）下面，"换成 C# 会怎样"被问了一遍又一遍，Anders Hejlsberg 后来亲自回应，核心是三点。
+
+**这不是从零开始。** 他的原话是："In a green field, this would have been a totally different conversation. But this was not a green field - it's a port of an existing codebase with 100 man-years of investment." 也就是说，这是对一个已经投入约 100 人年的代码库做移植。
+
+**C# 确实在候选之列。** "After evaluating numerous languages and making multiple prototypes — including in C# — Go emerged as the optimal choice." 团队评估过众多语言、做过多个原型，其中就有 C#。他同时否认这是对 C# 的不信任：C# 至今是微软内部使用最广的语言，Roslyn 就是 C# 能做出自举编译器的证明。
+
+**选 Go 的理由是形状匹配。** 编译器代码里全是函数和数据结构、几乎没有类，地道的 Go 写法与之一一对应，移植可以高度自动化；Go 在树遍历与内存分配上的 ergonomics 也正对口。
+
+所以那一次是移植而非重写：只有逐行搬运，才能保住全世界项目依赖的既有语义与每一个报错行为。微软团队花了一年多完成这次搬运，这份家底也成为后来所有 AI 跨语言移植的起点。
+
+### 同类项目
+
+用大模型把 TypeScript 编译器搬到其他语言的开源项目已经不止一个，本仓库是其中之一。本仓库的上游，以及另外两个方向相同的项目：
+
+| 项目 | 语言 | 做法 |
+| --- | --- | --- |
+| [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs)（`typescript-cs` 分支） | C# | 本仓库的上游。不逐文件翻译，按职责重新切分，多个 Go 函数可合并为一个 C# 实现，C# 代码量约为 Go 版的一半；每处与 Go 的差异记入台账 |
+| [typescript-csharp](https://github.com/239573049/typescript-csharp) | C# | 一比一移植，.NET 10 NativeAOT，与官方仓库基线逐字节比对 |
+| [ts-rust](https://github.com/pingdotgg/ts-rust) | Rust | 用大模型把 TypeScript 的 Go 版编译器整个移植成 Rust |
+
+本节背景与项目概况整理自周杰DotNet[《TypeScript-Go 编译器，有人用 C# 重写吗？》](https://mp.weixin.qq.com/s/SIdbv7K8Yj4zavexxrmCLA)（2026-10-20）。
 
 ## 已知边界
 
