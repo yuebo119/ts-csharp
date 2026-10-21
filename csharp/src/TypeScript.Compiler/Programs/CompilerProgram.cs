@@ -211,6 +211,7 @@ public sealed partial class CompilerProgram
         internal IEnumerable<Utf8String> ExternalLibraryFiles => loadedDepth.Where(p => p.Value > 0).Select(p => p.Key);
         private readonly int concurrency;
         private readonly SemaphoreSlim parseSlots;
+        private readonly SemaphoreSlim resolveSlots;
         private readonly CancellationToken cancellation;
         private readonly bool skipModuleResolution;
         internal readonly ProjectReferences references;
@@ -281,6 +282,7 @@ public sealed partial class CompilerProgram
             };
             this.concurrency = config.Options.SingleThreaded == true ? 1 : concurrency;
             parseSlots = new(this.concurrency, this.concurrency);
+            resolveSlots = new(this.concurrency, this.concurrency);
             this.cancellation = cancellation;
             this.libraryDirectory = libraryDirectory ?? (fs is LibraryFileSystem libraries ? libraries.LibraryDirectory : Utf8String.Empty);
             var comparer = fs.CaseSensitive ? Utf8StringComparer.Ordinal : Utf8StringComparer.OrdinalIgnoreCase;
@@ -532,7 +534,7 @@ public sealed partial class CompilerProgram
         private async ValueTask LoadPending(LinkedList<(FileIncludeReason Reason, bool Library, int Depth, PackageId? Package)> pending)
         {
             // Keep file-local parsing and binding busy while publishing the graph in discovery order.
-            var scheduled = new Queue<(Utf8String Path, bool Library, ParsedConfig Project, ValueTask<ParsedSource> Task)>();
+            var scheduled = new Queue<(Utf8String Path, bool Library, ParsedConfig Project, Task<Prepared> Prepared)>();
             try
             {
                 while (pending.Count != 0 || scheduled.Count != 0)
@@ -600,12 +602,18 @@ public sealed partial class CompilerProgram
                         }
                         loadedDepth[path] = item.Depth;
                         var project = references.Find(path)?.Project ?? config;
-                        scheduled.Enqueue((path, item.Library, project, ParseAndBind(path, project, item.Library)));
+                        // Resolution starts as soon as this file's parse finishes, so the
+                        // module lookups of later files overlap instead of queueing behind the
+                        // publish loop. Publication still consumes the results in discovery
+                        // order, so the file, dependency and diagnostic order is unchanged.
+                        scheduled.Enqueue((path, item.Library, project,
+                            PrepareAsync(ParseAndBind(path, project, item.Library).AsTask(), path, project)));
                     }
                     if (scheduled.Count == 0)
                         continue;
                     var entry = scheduled.Dequeue();
-                    var parsed = await entry.Task.ConfigureAwait(false);
+                    var prepared = await entry.Prepared.ConfigureAwait(false);
+                    var parsed = prepared.Parsed;
                     if (parsed.File is not { } syntax)
                     {
                         missing.Add(entry.Path);
@@ -618,9 +626,7 @@ public sealed partial class CompilerProgram
                     int currentDepth = loadedDepth[entry.Path];
                     var dependencies = new List<Utf8String>();
                     var resolutions = new List<ModuleReference>();
-                    var resolver = Resolver(entry.Project);
                     var options = entry.Project.Options;
-                    Utf8String resolutionFile = references.Find(entry.Path)?.Source ?? entry.Path;
                     void Include(
                         Utf8String path,
                         FileIncludeKind kind,
@@ -649,17 +655,10 @@ public sealed partial class CompilerProgram
                             else
                                 Include(path, FileIncludeKind.PathReference, reference.Pos, length: reference.End - reference.Pos);
                         }
-                        foreach (var reference in syntax.TypeReferenceDirectives)
+                        for (int directive = 0; directive < syntax.TypeReferenceDirectives.Count; directive++)
                         {
-                            var mode = reference.ResolutionMode == 0
-                                ? DefaultMode(entry.Path, options, parsed.Format, parsed.PackageType)
-                                : reference.ResolutionMode;
-                            var resolved = await resolver.ResolveAsync(
-                                reference.FileName,
-                                resolutionFile,
-                                mode,
-                                true,
-                                cancellation).ConfigureAwait(false);
+                            var reference = syntax.TypeReferenceDirectives[directive];
+                            var (mode, resolved) = prepared.TypeReferences[directive];
                             resolutions.Add(new(reference.FileName, mode, null, resolved, true));
                             if (resolved.IsResolved)
                                 Include(
@@ -699,33 +698,13 @@ public sealed partial class CompilerProgram
                                 true,
                                 length: reference.End - reference.Pos);
                         }
-                    var imports = new List<(SyntaxNode? Node, Utf8String Name)>();
-                    bool javaScript = syntax.ScriptKind is ScriptKind.JS or ScriptKind.JSX;
-                    if (options.ImportHelpers == true && (javaScript || !syntax.IsDeclarationFile
-                        && (syntax.ExternalModuleIndicator is not null
-                            || options.IsolatedModules == true
-                            || options.VerbatimModuleSyntax == true)))
-                        imports.Add((null, Utf8Literals.Tslib));
-                    Utf8String? Pragma(Utf8String name) =>
-                        syntax.Pragmas.LastOrDefault(p => p.Name == name).Arguments?.GetValueOrDefault(Utf8Literals.Factory).Value;
-                    if ((javaScript || syntax.ScriptKind == ScriptKind.TSX) && Pragma(Utf8Literals.Jsxruntime) != Utf8Literals.Classic
-                        && (options.Jsx is JsxEmit.ReactJSX or JsxEmit.ReactJSXDev || options.JsxImportSource is not null
-                            || Pragma(Utf8Literals.Jsximportsource) is not null || Pragma(Utf8Literals.Jsxruntime) == Utf8Literals.Automatic))
+                    var imports = prepared.Imports;
+                    for (int index = 0; index < imports.Count; index++)
                     {
-                        Utf8String jsx = Pragma(Utf8Literals.Jsximportsource) ?? options.JsxImportSource ?? Utf8Literals.React;
-                        imports.Add((null, jsx + (options.Jsx == JsxEmit.ReactJSXDev ? Utf8Literals.JsxDevRuntime : Utf8Literals.JsxRuntime)));
-                    }
-                    imports.AddRange(syntax.Imports.Select(n => (Node: (SyntaxNode?)n, Name: ImportText(n))));
-                    foreach (var import in imports)
-                    {
+                        var import = imports[index];
                         if (skipModuleResolution || import.Name.Length == 0)
                             continue;
-                        var mode = UsageMode(import.Node, entry.Path, options, parsed.Format, parsed.PackageType);
-                        var resolved = await resolver.ResolveAsync(
-                            import.Name,
-                            resolutionFile,
-                            mode,
-                            cancellation: cancellation).ConfigureAwait(false);
+                        var (mode, resolved) = prepared.ImportResolutions[index];
                         resolutions.Add(new(import.Name, mode, import.Node, resolved));
                         diagnostics.AddRange(resolved.Diagnostics);
                         if (!resolved.IsResolved || options.NoResolve == true)
@@ -754,14 +733,10 @@ public sealed partial class CompilerProgram
                         Include(resolved.FileName, FileIncludeKind.Import, import.Node?.Pos ?? 0, depth: depth, package: resolved.PackageId,
                             length: import.Node is null ? 0 : import.Node.End - import.Node.Pos);
                     }
-                    foreach (var augmentation in skipModuleResolution ? [] : syntax.ModuleAugmentations.OfType<StringLiteralNode>())
+                    for (int index = 0; index < prepared.Augmentations.Count; index++)
                     {
-                        var mode = UsageMode(augmentation, entry.Path, options, parsed.Format, parsed.PackageType);
-                        var resolved = await resolver.ResolveAsync(
-                            augmentation.Text,
-                            resolutionFile,
-                            mode,
-                            cancellation: cancellation).ConfigureAwait(false);
+                        var augmentation = prepared.Augmentations[index];
+                        var (mode, resolved) = prepared.AugmentationResolutions[index];
                         resolutions.Add(new(augmentation.Text, mode, augmentation, resolved, Augmentation: true));
                         diagnostics.AddRange(resolved.Diagnostics);
                     }
@@ -784,8 +759,104 @@ public sealed partial class CompilerProgram
             {
                 // Observe outstanding work before the builder (including its mapper host) is disposed.
                 if (scheduled.Count != 0)
-                    await Task.WhenAll(scheduled.Select(entry => entry.Task.AsTask())).ConfigureAwait(false);
+                    await Task.WhenAll(scheduled.Select(entry => entry.Prepared)).ConfigureAwait(false);
             }
+        }
+
+        // Everything one discovered file needs besides the parse itself: its import list and the
+        // module lookups for it, resolved off the publish thread. The publish loop still applies
+        // these in discovery order, so file, dependency and diagnostic order is unchanged.
+        private sealed class Prepared
+        {
+            internal ParsedSource Parsed = null!;
+            internal List<(SyntaxNode? Node, Utf8String Name)> Imports = [];
+            internal List<(ReferenceResolutionMode Mode, ResolvedModule Module)> ImportResolutions = [];
+            internal List<(ReferenceResolutionMode Mode, ResolvedModule Module)> TypeReferences = [];
+            internal List<StringLiteralNode> Augmentations = [];
+            internal List<(ReferenceResolutionMode Mode, ResolvedModule Module)> AugmentationResolutions = [];
+        }
+
+        private async Task<Prepared> PrepareAsync(Task<ParsedSource> parsedTask, Utf8String path, ParsedConfig project)
+        {
+            var prepared = new Prepared { Parsed = await parsedTask.ConfigureAwait(false) };
+            if (prepared.Parsed.File is not { } syntax)
+                return prepared;
+            var parsed = prepared.Parsed;
+            var options = project.Options;
+            var resolver = Resolver(project);
+            Utf8String resolutionFile = references.Find(path)?.Source ?? path;
+            // The parse slot was released before this wait, so parsing of other files keeps
+            // running while this file's lookups queue for a resolution slot.
+            await resolveSlots.WaitAsync(cancellation).ConfigureAwait(false);
+            try
+            {
+                if (!skipModuleResolution && options.NoResolve != true)
+                    foreach (var reference in syntax.TypeReferenceDirectives)
+                    {
+                        var mode = reference.ResolutionMode == 0
+                            ? DefaultMode(path, options, parsed.Format, parsed.PackageType)
+                            : reference.ResolutionMode;
+                        prepared.TypeReferences.Add((mode,
+                            await resolver.ResolveAsync(reference.FileName, resolutionFile, mode, true, cancellation).ConfigureAwait(false)));
+                    }
+                bool javaScript = syntax.ScriptKind is ScriptKind.JS or ScriptKind.JSX;
+                if (options.ImportHelpers == true && (javaScript || !syntax.IsDeclarationFile
+                    && (syntax.ExternalModuleIndicator is not null
+                        || options.IsolatedModules == true
+                        || options.VerbatimModuleSyntax == true)))
+                    prepared.Imports.Add((null, Utf8Literals.Tslib));
+                Utf8String? Pragma(Utf8String name) =>
+                    syntax.Pragmas.LastOrDefault(p => p.Name == name).Arguments?.GetValueOrDefault(Utf8Literals.Factory).Value;
+                if ((javaScript || syntax.ScriptKind == ScriptKind.TSX) && Pragma(Utf8Literals.Jsxruntime) != Utf8Literals.Classic
+                    && (options.Jsx is JsxEmit.ReactJSX or JsxEmit.ReactJSXDev || options.JsxImportSource is not null
+                        || Pragma(Utf8Literals.Jsximportsource) is not null || Pragma(Utf8Literals.Jsxruntime) == Utf8Literals.Automatic))
+                {
+                    Utf8String jsx = Pragma(Utf8Literals.Jsximportsource) ?? options.JsxImportSource ?? Utf8Literals.React;
+                    prepared.Imports.Add((null, jsx + (options.Jsx == JsxEmit.ReactJSXDev ? Utf8Literals.JsxDevRuntime : Utf8Literals.JsxRuntime)));
+                }
+                prepared.Imports.AddRange(syntax.Imports.Select(n => (Node: (SyntaxNode?)n, Name: ImportText(n))));
+                // Every import of this file is looked up at once: the resolver's caches are
+                // lock-guarded and each lookup owns its request state, so they do not observe
+                // each other, and the results are consumed below in this same order. Resolution
+                // tracing reports whether a package.json lookup was served from the shared
+                // cache, which concurrent filling would make order-dependent, so tracing
+                // keeps the serial path.
+                bool concurrent = options.TraceResolution != true && concurrency > 1;
+                var modes = new ReferenceResolutionMode[prepared.Imports.Count];
+                var lookups = new Task<ResolvedModule>?[prepared.Imports.Count];
+                for (int i = 0; i < prepared.Imports.Count; i++)
+                {
+                    var import = prepared.Imports[i];
+                    if (skipModuleResolution || import.Name.Length == 0)
+                        continue;
+                    modes[i] = UsageMode(import.Node, path, options, parsed.Format, parsed.PackageType);
+                    if (concurrent)
+                        lookups[i] = resolver.ResolveAsync(import.Name, resolutionFile, modes[i], cancellation: cancellation).AsTask();
+                }
+                for (int i = 0; i < prepared.Imports.Count; i++)
+                {
+                    if (lookups[i] is { } started)
+                        prepared.ImportResolutions.Add((modes[i], await started.ConfigureAwait(false)));
+                    else if (skipModuleResolution || prepared.Imports[i].Name.Length == 0)
+                        prepared.ImportResolutions.Add((default, null!));
+                    else
+                        prepared.ImportResolutions.Add((modes[i],
+                            await resolver.ResolveAsync(prepared.Imports[i].Name, resolutionFile, modes[i], cancellation: cancellation).ConfigureAwait(false)));
+                }
+                if (!skipModuleResolution)
+                    prepared.Augmentations.AddRange(syntax.ModuleAugmentations.OfType<StringLiteralNode>());
+                foreach (var augmentation in prepared.Augmentations)
+                {
+                    var mode = UsageMode(augmentation, path, options, parsed.Format, parsed.PackageType);
+                    prepared.AugmentationResolutions.Add((mode,
+                        await resolver.ResolveAsync(augmentation.Text, resolutionFile, mode, cancellation: cancellation).ConfigureAwait(false)));
+                }
+            }
+            finally
+            {
+                resolveSlots.Release();
+            }
+            return prepared;
         }
 
         private async ValueTask<ParsedSource> ParseAndBind(Utf8String path, ParsedConfig project, bool library)
