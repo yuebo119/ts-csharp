@@ -44,3 +44,6 @@ jobs:
           Set-Content -Path (Join-Path $work.FullName "bad.ts") -Value 'const x: number = "s";'
           $output = built/ci-aot/tsc.exe (Join-Path $work.FullName "bad.ts") 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0 -or $output -notmatch "TS2322") { throw "diagnostics smoke failed" }
+          # runner 会在 pwsh 脚本末尾追加 `exit $LASTEXITCODE`。tsc 对含诊断的文件按设计返回非 0，
+          # 断言全过后若不显式 exit 0，步骤就死在这个注入行上：日志只剩 Version 一行，不带任何报错。
+          exit 0
