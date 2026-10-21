@@ -48,7 +48,7 @@
 | work stealing + 重文件语句级拆分（`splitcheck.rs`） | 本仓已实施并全额回退（L3-a：checkPool −17% 确定性，端到端 25 对 1.006；emit 尾部亲和吃掉收益）。tsrs 的 splitcheck 切顶层语句，不解决 proto.ts（单文件内单一巨类型计算） | 已闭 |
 | leaf 文件 region / 每文件 emit scratch region | 形态为 noEmit 峰值内存优化；本仓 RSS 非门禁项 | 不照搬 |
 | FxHashMap 一切 / SmallVec / PackedMap | .NET `Dictionary` 已等效（无 SipHash 问题）；SmallVec tsrs 标注未试 | 无需动作 |
-| PGO / BOLT / mimalloc | 本仓 R2R+动态 PGO 实测慢 2~2.6×（表2，短命进程 warmup 压倒稳态收益）；NativeAOT 形态保持。NativeAOT 静态 PGO 在 .NET 11 的支持情况 **[待查证]**，若支持可作一次性构建形态探针 | 待查证后评估 |
+| PGO / BOLT / mimalloc | 本仓 R2R+动态 PGO 实测慢 2~2.6×（表2，短命进程 warmup 压倒稳态收益）；NativeAOT 形态保持。NativeAOT 静态 PGO 在 .NET 11 已查证无支持（§8.5），此项关闭 | 已闭 |
 | 扁平符号表（Bun 式） | tsrs 自己否了：−8~9 MB 前端堆换 +0.4~2.5% 单线程指令，PR 147 关闭 | 双向确认不做 |
 | 工程纪律：指令数量具（重复性 0.001%）、落地门槛（≥1% 指令 / ≥2% 墙钟×两次发布 / ≥5% 内存；加线程/缓存/阶段重叠需明显余量）、每个缓存的 shadow 校验模式、measured-and-rejected 清单 | 本仓已有等价物（`csharp-perf-method.md` / `perf-budgets.md` / `perf-ledger.md` / 环境闸门探针 TSHARP_*）；唯一缺口是指令计数（EventPipe 在本机 .NET 11 RC 不可用，表3 已记） | 方法论已追平；量具缺口可选补齐（见 §7） |
 
