@@ -40,6 +40,7 @@ internal sealed partial class TypeAlgebra(TypeContext context, TypeOrder order, 
     private readonly Dictionary<(uint First, uint Second, UnionReduction Reduction, TypeCacheKey Alias), Type> unionPairs = [];
     private readonly Dictionary<(TypeCacheKey Types, IntersectionFlags Flags), Type> intersections = [];
     private readonly Dictionary<TypeCacheKey, Type[]> subtypeReductions = [];
+    private List<Type> mergeScratch = [];
 
     private void RequireOwned(IReadOnlyList<Type> types, TypeAlias? alias = null)
     {
@@ -207,12 +208,22 @@ internal sealed partial class TypeAlgebra(TypeContext context, TypeOrder order, 
         }
         // Flattened unions frequently arrive in canonical order already. Avoid
         // sorting them again: structural type comparison can traverse whole types.
+        // Exactly one descending pair means the list is two ascending runs: merging them
+        // costs one comparison per element, where an introsort pays n log n. Measured on the
+        // heaviest file, 155 of 172 large unions (N>=129) have exactly one descent.
+        int split = 0, descents = 0;
         for (int i = 1; i < types.Count; i++)
             if (order.Compare(types[i - 1], types[i]) > 0)
             {
-                types.Sort(order);
-                break;
+                if (descents++ == 0)
+                    split = i;
+                if (descents > 1)
+                    break;
             }
+        if (descents == 1)
+            MergeRuns(types, split);
+        else if (descents > 1)
+            types.Sort(order);
         if (types.Count > 1)
         {
             int unique = 1;
@@ -222,6 +233,28 @@ internal sealed partial class TypeAlgebra(TypeContext context, TypeOrder order, 
             types.RemoveRange(unique, types.Count - unique);
         }
         return (types, includes);
+
+        // Merges the two ascending runs [0, split) and [split, Count) into one ascending run.
+        // The comparator is a total order in which only identical types compare equal, so the
+        // merged sequence is exactly what a full sort would produce; duplicates collapse in
+        // the pass above. Costs at most Count-1 comparisons, no verification pass needed.
+        void MergeRuns(List<Type> list, int split)
+        {
+            int count = list.Count;
+            var scratch = mergeScratch;
+            scratch.Clear();
+            if (scratch.Capacity < count)
+                scratch.Capacity = count;
+            int i = 0, j = split;
+            while (i < split && j < count)
+                scratch.Add(order.Compare(list[i], list[j]) <= 0 ? list[i++] : list[j++]);
+            while (i < split)
+                scratch.Add(list[i++]);
+            while (j < count)
+                scratch.Add(list[j++]);
+            for (int k = 0; k < count; k++)
+                list[k] = scratch[k];
+        }
 
         void Add(Type type)
         {

@@ -92,6 +92,26 @@ internal static class CheckerAlgebraTests
         Check(recovered == algebra.TemplateAsync(["x"u8, "y"u8], [parameter]).GetAwaiter().GetResult());
         Check(
             context.StringType == algebra.UnionAsync([context.StringType, context.GetStringLiteralType("text"u8)]).GetAwaiter().GetResult());
+        // A single descending pair among otherwise ascending inputs takes the two-run merge
+        // path. The merged order must equal a full sort's, so compare the constituent sequence
+        // against the same inputs handed over already sorted.
+        var runMembers = Enumerable.Range(0, 64).Select(i => (Type)context.GetStringLiteralType(Utf8String.Copy("m"u8) + i)).ToArray();
+        var ascending = algebra.UnionAsync(runMembers).GetAwaiter().GetResult();
+        for (int swapAt = 1; swapAt < runMembers.Length; swapAt++)
+        {
+            var misordered = runMembers.ToArray();
+            (misordered[swapAt - 1], misordered[swapAt]) = (misordered[swapAt], misordered[swapAt - 1]);
+            var merged = algebra.UnionAsync(misordered).GetAwaiter().GetResult();
+            Check(merged == ascending);
+            Check(merged is UnionType { Types.Count: 64 } run && run.Types.SequenceEqual(((UnionType)ascending).Types));
+        }
+        // Two or more descents fall back to the full sort; the result must still match.
+        var scrambled = runMembers.ToArray();
+        (scrambled[0], scrambled[^1]) = (scrambled[^1], scrambled[0]);
+        (scrambled[10], scrambled[40]) = (scrambled[40], scrambled[10]);
+        var resorted = algebra.UnionAsync(scrambled).GetAwaiter().GetResult();
+        Check(resorted == ascending);
+        Check(resorted is UnionType { Types.Count: 64 } sortedRun && sortedRun.Types.SequenceEqual(((UnionType)ascending).Types));
         Console.WriteLine($"{assertions} algebra ownership/limit/cancellation assertions; template, intersection and origin depth {depth}");
     }
 }
