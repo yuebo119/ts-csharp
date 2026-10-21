@@ -87,3 +87,36 @@
 3. **探针三**：flow (reference, flowNode) 跨 walk 重访率，验证 63-67% 在本仓是否成立。
 4. **可选量具补齐**：tsrs 与本仓之间唯一的代差是指令计数确定性（0.001% vs 本仓 1.1% 墙钟噪声下限）。本机 EventPipe 阻塞；可评估在 CI Linux runner 上用 `perf stat` 测 NativeAOT 产物的指令数， CodSpeed 式 CPU 模拟是另一选项。这是工具投资，不是产品优化。
 5. **明确不做**：arena / 句柄压缩 / ThinSlice / 字符串驻留 / 扁平符号表 / 512MB 栈 / work stealing 重开，各自都有本仓或 tsrs 的否决数据，勿重复提案。
+
+## 8. 版本对齐分析（2026-10-21 补，GitHub API 实测）
+
+### 8.1 当前项目锚定的 TS 版本
+
+- `csharp/version.txt` = **7.1.0-dev**（上游 `6ed638d3a5` 处同值，contents API base64 解出 `7.1.0-dev`）。这是 TypeScript 7 原生移植线（Go 版 checker 时代），不是 tsc 5.x 线。
+- 锚点提交：microsoft/TypeScript `6ed638d3a5`（2026-10-04，消息 "Benchmark C# runtime and GC configurations against Go"）。C# 优化前基线（本仓 init `2aaad02`）的树与该提交的 `csharp/` 目录逐字节相同，Go 参考亦由该提交构建，两侧同源同时本，对比方法论成立（r38 §4）。
+- **结构事实**：`csharp/` 目录不在 mainline。main tip（`538671d3`，2026-10-21）与 `b85298b6` 处的 contents 查询均 404，默认分支上 `commits?path=csharp` 零命中。即 C# 移植只存在于一条侧分支，本仓从该线起步；mainline 只有 Go 移植。
+
+### 8.2 tsrs 的锚点与本仓的关系
+
+- tsrs 钉 `b85298b6`（2026-09-29，PR #64543 "Enforce exclusive checker acquisition"），该提交在 mainline 上（`compare b85298b6...main` 为 ahead/behind 0），main 已领先它 118 个提交。
+- 两锚点分叉：`compare 6ed638d3a5...b85298b6` 状态 diverged，本仓线领先 159 提交、落后 72 提交。本仓锚点日期（10-04）晚于 tsrs 锚点（09-29），但两者不是同一线的先后关系。
+
+### 8.3 能与 7.1.0-dev 或 tsrs 提交级对齐吗
+
+- 版本号意义上已经对齐：两边都是 7.1.0-dev。
+- 提交级对齐的实质是把 18.1 万行移植（产品源码实测 180,850 行，其中 checker 65,504 行、emit 18,561 行）从侧分支线搬到 mainline 线。障碍是 mainline 没有 csharp 目录可同步，这等于从 tsgo/tsc 重新移植，不是 rebase。
+- 追平代价不止移植：r38 建立的全部锚点作废（Go 参考 sha256 `5e46cd5d`、基线二进制、对 Go ×1.384 表、25 夹具期望输出、safety 基线），需一次完整的 r38 级三侧重建（23 负载 × 15 对）。
+- 且 mainline 三周前进 118 提交（约每周 40），追平一个点立刻出现新 delta，对齐是 treadmill 不是里程碑。
+- **结论：不做提交级重对齐。** 锚点冻结是战役资产（r38 的 ×1.384 与 +46.3% 全部挂在它上面）；重新锚定只应发生在阶段边界或上游侧分支实质前进时，届时按 r38 方法论整轮重建。
+
+### 8.4 「统一起跑线」的正确最小形态
+
+- **该统一的**：同机同协议（已做到）；负载集（见下）；确定性量具（唯一代差，见 8.5）。
+- **不该统一的**：checker 默认数。tsrs 默认 16（机器规则 clamp(max(cores/2, min(cores,16)), 4, 32)），本仓在 16C/32T 上实测 8 最优、>8 时 medium +5.5%（全量重读轮证伪行），默认数是实现与机器相关的实测结论，不是可统一的参数。CLI 与口径细节同理。
+- **负载集补充**：现有 5 夹具（真实工程/medium/huge/tiny512/dtsheavy）全是 TypeScript 仓库自身形状（自寄、巨型单文件、d.ts 重、小文件海）。建议补 2~3 个真实应用形状：DOM 重的 .d.ts 大图工程、多中等文件深泛型推断工程。生成器 `csharp/tools/perf-fixtures.mjs` 已具备，成本低；直接服务「新负载类型」触发器，并给类型级成本结论第二个证据源。
+
+### 8.5 PGO 查证结果（2026-10-21，Microsoft Learn 检索）
+
+- 检索未发现 .NET NativeAOT 的 PGO 支持。动态 PGO（`DOTNET_TieredPGO`）是 JIT 机制，对 AOT 无效；MSVC PGO 只作用于原生 C++ 编译单元，ILC 产物不在其范围。
+- 本仓已用 `OptimizationPreference=Speed`（表1 工程配置行）。R2R+动态 PGO 已实测慢 2~2.6×（表2）。
+- **结论：tsrs 的 PGO −13.5% 指令收益在 .NET 侧无对应物，此项关闭**，勿再提案。
