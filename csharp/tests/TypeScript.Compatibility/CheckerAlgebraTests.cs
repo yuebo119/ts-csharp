@@ -112,6 +112,15 @@ internal static class CheckerAlgebraTests
         var resorted = algebra.UnionAsync(scrambled).GetAwaiter().GetResult();
         Check(resorted == ascending);
         Check(resorted is UnionType { Types.Count: 64 } sortedRun && sortedRun.Types.SequenceEqual(((UnionType)ascending).Types));
+        // Many scattered descents exercise several bottom-up merge passes. Rotating by k makes
+        // the flattened list k ascending runs regardless of k.
+        foreach (int k in new[] { 3, 5, 8, 13, 21 })
+        {
+            var rotated = runMembers.Skip(k).Concat(runMembers.Take(k)).ToArray();
+            var merged = algebra.UnionAsync(rotated).GetAwaiter().GetResult();
+            Check(merged == ascending);
+            Check(merged is UnionType { Types.Count: 64 } rotatedRun && rotatedRun.Types.SequenceEqual(((UnionType)ascending).Types));
+        }
         Console.WriteLine($"{assertions} algebra ownership/limit/cancellation assertions; template, intersection and origin depth {depth}");
     }
 }
