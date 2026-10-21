@@ -5,7 +5,7 @@
 | 类型 | 基线重建报告 |
 | 日期 | 2026-10-14 |
 | 轮次 | r36 |
-| 主题 | 独立仓库（typescript-csharp）完整测试 + 全量性能重建基线 |
+| 主题 | 独立仓库（ts-csharp）完整测试 + 全量性能重建基线 |
 | 涉及 git 节点 | 本仓 `main` @ `c01f552`（产物 = `pkgs/nrb1`，tsc.exe sha256 `ac7135157f7499b23203…`） |
 | 对照节点 | `pkgs/r35p2`（tsc.exe sha256 `6ff5a708b0ed730629e8…`，r35 第 2 期产物，与本次源码逐字节同源） |
 | 数据来源 | tsbench 批次 `bench/AB146-nrb1-vs-r35p2`（23 工作负载 × 15 样本，配对交错） |
@@ -58,7 +58,7 @@
 - 逐行 p95/min ≤ 3 双槽检查：23/23 通过（本批最大 1.54，远低于阈值）。
 - 对照组（同产物同参数自比）：medianRatio 1.0024，95% CI [0.972, 1.026] 含 1.0，无槽位偏置；p95RelativePairDifference 8.1%（单值不作否决依据，逐行散布佐证）。
 - 逐字节断言：边界注记确认"Files, diagnostics and emitted bytes compare exactly"，两槽产物输出全等。
-- 驱动与口径：`typescript-csharp/csharp/tools/performance-cli.mjs`（自此批次起驱动记录指向独立仓库路径）；15 样本、暖文件系统、新进程含启动；serverGC 显式 0 注入。
+- 驱动与口径：`ts-csharp/csharp/tools/performance-cli.mjs`（自此批次起驱动记录指向独立仓库路径）；15 样本、暖文件系统、新进程含启动；serverGC 显式 0 注入。
 
 ## 口径注记
 

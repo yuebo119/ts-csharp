@@ -182,7 +182,7 @@ cd <TypeScript 仓> && git worktree add --detach <wt> 6ed638d3a5
 cd <wt>/tsc && CGO_ENABLED=0 GOAMD64=v1 go build -trimpath -ldflags="-s -w" -tags=noembed ./cmd/tsc
 
 # C# 基线（本仓 init 树）+ lib 供给（该节点 csproj 从 ../../../tsc/internal/bundled/libs 取 lib）
-git -C <typescript-csharp> archive 2aaad02 csharp | tar -x -C <base-src>
+git -C <ts-csharp> archive 2aaad02 csharp | tar -x -C <base-src>
 cp -r <wt>/tsc/internal/bundled/libs <base-src>/tsc/internal/bundled/
 cd <base-src>/csharp && dotnet publish src/TypeScript.CommandLine/TypeScript.CommandLine.csproj \
   -c Release -r win-x64 -p:PublishAot=true -p:TypeScriptExecutableName=tsc \

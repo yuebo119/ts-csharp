@@ -1,4 +1,4 @@
-# typescript-csharp
+# ts-csharp
 
 TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、绑定、类型检查、发射与语言服务，产物与参考实现逐字节一致，可 NativeAOT 发布。本仓库是 [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs) `typescript-cs` 分支的优化版，自该分支的 `f29aeb9f` 处独立，此后的性能优化与质量工作主要使用 DeepSeek V4.1 Flash 完成；git 历史仅保留 C# 工作的提交（作者、日期与提交信息逐字保留），上游 TypeScript/JavaScript 与 Go 实现的历史不在本仓库。
 

@@ -222,7 +222,7 @@ async function npmPack(packageDirectory) {
 const packages = [await npmPack(platformDirectory), await npmPack(mainDirectory)];
 const archive = new AdmZip();
 archive.addLocalFolder(platformDirectory);
-const zipPath = path.join(directory, `typescript-csharp-${version}-${target.rid}.zip`);
+const zipPath = path.join(directory, `ts-csharp-${version}-${target.rid}.zip`);
 archive.writeZip(zipPath);
 assert.deepEqual(await sourceProvenance(), provenance, "Distribution inputs changed while publishing");
 await json(path.join(stage, "source-provenance.json"), provenance);

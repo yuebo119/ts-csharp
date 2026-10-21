@@ -147,7 +147,7 @@ skipLibCheck 口径校准（2026-10-15 补，比较本报告数字前须对齐�
 
 **从零重建基线 + 全量复测（2026-10-13，`docs/csharp-perf-report-r34-rebaseline.md`，批 AB137~AB139）**：三侧全部从源码重建（Go 参考 sha256 与历史逐字节一致；C# 基线与当前产物输出逐字节一致）。fresh 全量结果：重负载对 fresh 基线 +46.2%、对 Go 默认 x1.396；分配 1,221.7 → 1,001.7 MB（−18.0%，与历史二进制测量差 0.02%）。**关键发现：历史 naot-svr 二进制带着旧工具链签名（fresh 重建后小 275KB，轻负载性能签名系统性不同）——轻负载 12 项对 fresh 基线读 −4.9%，而历史批读 +3.4%，说明轻负载的既存"改善"部分是工具链假象；重负载 +46% 不受影响。后续对比一律以 `pkgs-fresh/naot-svr` 为基线，历史 naot-svr 退化为史料。**
 
-**独立仓库基线重锚（2026-10-14，docs/csharp-perf-report-r36-standalone-baseline.md，批 AB146）**：C# 侧基线节点自 pkgs/r35p2 移交 pkgs/nrb1（typescript-csharp 仓 c01f552 产物，manifests/nrb1.json）。全量 23 工作负载配对 A/B：比值 0.9924~1.0120 全落噪声带内、RSS 批内 0.998~1.005、逐字节输出全等、对照 CI [0.972,1.026] 含 1.0。后续轮次 --baseline-manifest 用 nrb1.json；对 Go 比值沿用 r34/r35 锚（重负载 x1.398~x1.423 漂移带），源码同源不重测。驱动自此批起记录为独立仓库路径 csharp/tools/performance-cli.mjs。
+**独立仓库基线重锚（2026-10-14，docs/csharp-perf-report-r36-standalone-baseline.md，批 AB146）**：C# 侧基线节点自 pkgs/r35p2 移交 pkgs/nrb1（ts-csharp 仓 c01f552 产物，manifests/nrb1.json）。全量 23 工作负载配对 A/B：比值 0.9924~1.0120 全落噪声带内、RSS 批内 0.998~1.005、逐字节输出全等、对照 CI [0.972,1.026] 含 1.0。后续轮次 --baseline-manifest 用 nrb1.json；对 Go 比值沿用 r34/r35 锚（重负载 x1.398~x1.423 漂移带），源码同源不重测。驱动自此批起记录为独立仓库路径 csharp/tools/performance-cli.mjs。
 
 **对 Go 全量批次 AB147 与机器态异常（2026-10-14，docs/csharp-perf-report-r36-comparison.md）**：nrb1-vs-go-default 全量 23 行有效（逐字节全等、p95/min≤1.29），但当日机器态对 C# AOT 侧系统性劣化且 Go 侧稳定：同一 r35p2 二进制隔日 wall 542.5→729.3（+34%，cpu 812.5→921.9、并行度 1.50→1.26），r34 二进制当日复测 782.6 与 nrb1 767.3 同批等价（AB148 判别批）→ 全部 C# 二进制共同 +45%，非代码回归。当日比值（huge-file x2.032）不得写入锚；对 Go 口径维持 r34/r35 锚（重负载 x1.398~x1.423），空闲机器复测单批 nrb1-vs-go-default 后再重锚。
 

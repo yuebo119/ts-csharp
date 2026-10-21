@@ -24,7 +24,7 @@ internal static partial class Experiments
 
     public static bool CheckFileSystem()
     {
-        Utf8String directory = Utf8String.FromString(Path.Combine(Path.GetTempPath(), "typescript-csharp-" + Guid.NewGuid().ToString("N")));
+        Utf8String directory = Utf8String.FromString(Path.Combine(Path.GetTempPath(), "ts-csharp-" + Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(directory.ToString());
         try
         {

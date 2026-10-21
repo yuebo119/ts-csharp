@@ -140,7 +140,7 @@ internal static class WatchTests
     {
         int assertions = 0;
         void Check(bool value, string message) { assertions++; if (!value) throw new InvalidOperationException(message); }
-        string directory = Path.Combine(Path.GetTempPath(), "typescript-csharp-watch-" + Guid.NewGuid().ToString("N"));
+        string directory = Path.Combine(Path.GetTempPath(), "ts-csharp-watch-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
@@ -214,7 +214,7 @@ internal static class WatchTests
     {
         int assertions = 0;
         void Check(bool value, string message) { assertions++; if (!value) throw new InvalidOperationException(message); }
-        string directory = Path.Combine(Path.GetTempPath(), "typescript-csharp-command-" + Guid.NewGuid().ToString("N"));
+        string directory = Path.Combine(Path.GetTempPath(), "ts-csharp-command-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {

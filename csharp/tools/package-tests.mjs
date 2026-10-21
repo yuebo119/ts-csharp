@@ -118,7 +118,7 @@ finally {
 }
 
 const aliases = [];
-for (const relative of ["node_modules/typescript-csharp", "node_modules/@typescript/native-csharp", "node_modules/.pnpm/csharp-preview/node_modules/@typescript/csharp-preview"]) {
+for (const relative of ["node_modules/ts-csharp", "node_modules/@typescript/native-csharp", "node_modules/.pnpm/csharp-preview/node_modules/@typescript/csharp-preview"]) {
     const destination = path.join(installed, relative);
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(main, destination, { recursive: true });
