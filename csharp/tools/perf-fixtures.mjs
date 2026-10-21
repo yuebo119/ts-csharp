@@ -1,6 +1,7 @@
-// 性能验证夹具生成器：在 <directory>/fixtures 下生成 8 个负载夹具。
+// 性能验证夹具生成器：在 <directory>/fixtures 下生成 10 个负载夹具。
 // 形状与官方 harness 同构（medium 64x24、huge 单文件、tiny-files 512、增量空转、
-// 声明密集、错误密集 + clean 双胞胎、单行巨行）。仅生成源码树，不含构建产物。
+// 声明密集、错误密集 + clean 双胞胎、单行巨行、单点巨类型、跨文件泛型链）。
+// 仅生成源码树，不含构建产物。
 // 用法：node csharp/tools/perf-fixtures.mjs [--directory <dir>]
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -129,6 +130,61 @@ write("dtsheavy/tsconfig.json", tsconfig({
     strict: true, target: "es2017", module: "esnext", moduleResolution: "bundler", types: [], rootDir: "src",
     outDir: "out", declaration: true,
 }, ["src/**/*.ts", "src/**/*.d.ts"]));
+
+// ---- mapped1: one file, 400-member interface + mapped/conditional types (single-hot-type shape)
+{
+    const N = 400;
+    const shapes = [
+        "string", "number", "Promise<string>", "string[]", "{ a: string; b: number }",
+        "() => number", "readonly number[]", "Record<string, number>", "Model | null", "boolean",
+    ];
+    const lines = ["export interface Model {"];
+    for (let i = 0; i < N; i++) lines.push(`  p${i}: ${shapes[i % shapes.length]};`);
+    lines.push("}");
+    lines.push("export type Box<K, T> = { value: T; meta: { key: K } };");
+    lines.push("export type Mapped = { [K in keyof Model]: Box<K, Model[K]> };");
+    lines.push("export type Unwrapped<T> = T extends Promise<infer U> ? U : T extends readonly (infer U)[] ? U : T;");
+    lines.push("export type Flat = { [K in keyof Model]: Unwrapped<Model[K]> };");
+    lines.push("declare const mapped: Mapped;");
+    lines.push("declare const flat: Flat;");
+    for (let i = 0; i < N; i++) {
+        lines.push(`export const m${i} = mapped.p${i};`);
+        lines.push(`export const f${i} = flat.p${i};`);
+    }
+    write("mapped1/src/model.ts", lines.join("\n") + "\n");
+    write("mapped1/tsconfig.json", tsconfig({
+        strict: true, target: "es2017", module: "esnext", moduleResolution: "bundler", noEmit: true, types: [], rootDir: "src",
+    }, ["src/**/*.ts"]));
+}
+
+// ---- genericdeep: 32 files, cross-file conditional inference with infer clauses
+{
+    const N = 32, F = 20;
+    const keys = ["id", "value", "next"];
+    for (let i = 0; i < N; i++) {
+        const lines = [];
+        if (i > 0) lines.push(`import type { Item0, Unwrap0 } from "./g0";`);
+        lines.push(`export interface Item${i} { id: number; value: string; next?: Item${i}; }`);
+        lines.push(`export type Unwrap${i}<T> = T extends Promise<infer U> ? U : T extends readonly (infer U)[] ? U : T;`);
+        lines.push(`export type Mapped${i} = { [K in keyof Item${i}]: Unwrap${i}<Item${i}[K]> };`);
+        if (i > 0) {
+            lines.push(`export type Cross${i}A = Unwrap0<Item0["id"]>;`);
+            lines.push(`export type Cross${i}B = Unwrap0<Item0["value"]>;`);
+            lines.push(`export type Cross${i}C = Unwrap0<Item0["next"]>;`);
+            lines.push(`export type Cross${i}D = Unwrap0<Promise<Item0>>;`);
+        }
+        for (let k = 0; k < F; k++) {
+            lines.push(`export function f${i}_${k}<T, K extends keyof T>(x: T, key: K): T[K] { return x[key]; }`);
+            lines.push(`export function u${i}_${k}<T>(x: T): Unwrap${i}<T> { return x as never; }`);
+        }
+        lines.push(`declare const item${i}: Item${i};`);
+        for (let k = 0; k < F; k++) lines.push(`export const r${i}_${k} = f${i}_0(item${i}, "${keys[k % keys.length]}");`);
+        write(`genericdeep/src/g${i}.ts`, lines.join("\n") + "\n");
+    }
+    write("genericdeep/tsconfig.json", tsconfig({
+        strict: true, target: "es2017", module: "esnext", moduleResolution: "bundler", noEmit: true, types: [], rootDir: "src",
+    }, ["src/**/*.ts"]));
+}
 
 // ---- small3: three files (checker-count experiment shape)
 write("small3/src/a.ts", `export interface A { a: number }\nexport const a: A = { a: 1 };\n`);

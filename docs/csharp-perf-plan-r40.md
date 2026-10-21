@@ -1,9 +1,9 @@
-# r40 计划：tsrs 缓存族探针与 infer memo 原型（待评审）
+# r40 计划：tsrs 缓存族探针与 infer memo 原型（已执行，见报告）
 
 > **元数据** ｜ 类型: plan ｜ 日期: 2026-10-21 ｜ 轮次: r40 ｜ 主题: tsrs-cache-family-probes
 > 触发: 用户令「综合 tsrs 的经验，给当前项目的性能提升，制定一个优化方案」
 > 关联: `docs/csharp-perf-tsrs-analysis.md`（候选来源与逐项对照）、`docs/csharp-perf-report-r39-l3a.md`（单文件关键路径与端到端稀释先例）、`docs/csharp-perf-plan-r39-l1.md`（L1 仲裁）、`.ai/perf-ledger.md`
-> 状态: 方案待评审。本轮不动产品代码。第一个可执行项是 §3 阶段 0；探针报告产出后由 §8 的 D1 裁决哪些原型进入实施。
+> 状态: 已执行（2026-10-21）。D1 关闭 infer 与 flow；union 原型过正确性门禁但未过性能门禁，已全额回退；结果见 `docs/csharp-perf-report-r40-probes.md`。产品代码零改动。
 
 ## 1. 结论摘要
 
