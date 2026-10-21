@@ -1,6 +1,6 @@
 # ts-csharp
 
-TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、绑定、类型检查、发射与语言服务，产物与参考实现逐字节一致，可 NativeAOT 发布。本仓库是 [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs) `typescript-cs` 分支的优化版，自该分支的 `f29aeb9f` 处独立，此后的性能优化与质量工作主要使用 DeepSeek V4.1 Flash 完成；git 历史仅保留 C# 工作的提交（作者、日期与提交信息逐字保留），上游 TypeScript/JavaScript 与 Go 实现的历史不在本仓库。
+TypeScript 编译器的 C#/.NET 11 原生移植：完整实现扫描、解析、绑定、类型检查、发射与语言服务，产物与参考实现逐字节一致，可 NativeAOT 发布。
 
 - 编译器库约 18 万行、834 个 C# 文件，覆盖 tsc 的四个阶段与全部语言服务面
 - Release 构建在 analyzer 与 AOT 兼容验证全开、警告视为错误的配置下 0 警告 0 错误
@@ -71,20 +71,20 @@ tsc --project . --extendedDiagnostics --pretty false   # 分阶段时间/分配�
 
 ## 仓库结构
 
-| 路径 | 内容 |
-| --- | --- |
-| `csharp/src/TypeScript.Compiler/` | 编译器库：Syntax、Ast、Binding、Checking、Emission、Semantics、Diagnostics、Programs、Projects、Incremental、LanguageServices、LanguageServer、Api、Text |
-| `csharp/src/TypeScript.CommandLine/` | CLI 入口（`tsgo-cs` 开发产物，产品构建命名为 `tsc`） |
-| `csharp/tests/TypeScript.Compatibility/` | 兼容性台架：93 个 `--*-safety` 旗标与语法阶梯校验 |
-| `csharp/tests/TypeScript.RegularExpression/` | 正则扫描台架（stdin JSONL 协议） |
-| `csharp/tests/TypeScript.SourceMetadata/` | 解析与 JSDoc 元数据台架 |
-| `csharp/tools/` | 构建与验证脚本：夹具生成、逐字节门禁、确定性测量、safety 套件驱动 |
-| `csharp/compatibility/` | 兼容契约、生成式清单与证据（见 [contracts.md](csharp/compatibility/contracts.md)） |
-| `csharp/oracle/` | 归档的 Go 参考后端（仅兼容性调查使用，产品构建不经过） |
-| `csharp/external/tsc/` | 内嵌数据：108 个 lib.d.ts 与 13 个本地化诊断 |
-| `csharp/data/` | 数据驱动语义表：枚举值、大小写、规范化、正则属性、本地化 |
-| `csharp/distribution/` | NativeAOT 平台矩阵与打包配置 |
-| `docs/` | 设计与兼容性文档（管线、语言服务、宿主、AST 编解码、增量等） |
+| 路径                                           | 内容                                                                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `csharp/src/TypeScript.Compiler/`            | 编译器库：Syntax、Ast、Binding、Checking、Emission、Semantics、Diagnostics、Programs、Projects、Incremental、LanguageServices、LanguageServer、Api、Text |
+| `csharp/src/TypeScript.CommandLine/`         | CLI 入口（`tsgo-cs` 开发产物，产品构建命名为 `tsc`）                                                                                                   |
+| `csharp/tests/TypeScript.Compatibility/`     | 兼容性台架：93 个 `--*-safety` 旗标与语法阶梯校验                                                                                                      |
+| `csharp/tests/TypeScript.RegularExpression/` | 正则扫描台架（stdin JSONL 协议）                                                                                                                 |
+| `csharp/tests/TypeScript.SourceMetadata/`    | 解析与 JSDoc 元数据台架                                                                                                                        |
+| `csharp/tools/`                              | 构建与验证脚本：夹具生成、逐字节门禁、确定性测量、safety 套件驱动                                                                                                   |
+| `csharp/compatibility/`                      | 兼容契约、生成式清单与证据（见 [contracts.md](csharp/compatibility/contracts.md)）                                                                     |
+| `csharp/oracle/`                             | 归档的 Go 参考后端（仅兼容性调查使用，产品构建不经过）                                                                                                          |
+| `csharp/external/tsc/`                       | 内嵌数据：108 个 lib.d.ts 与 13 个本地化诊断                                                                                                        |
+| `csharp/data/`                               | 数据驱动语义表：枚举值、大小写、规范化、正则属性、本地化                                                                                                           |
+| `csharp/distribution/`                       | NativeAOT 平台矩阵与打包配置                                                                                                                    |
+| `docs/`                                      | 设计与兼容性文档（管线、语言服务、宿主、AST 编解码、增量等）                                                                                                       |
 
 C# 后端的阶段进展与逐面验证记录见 [csharp/README.md](csharp/README.md)。
 
@@ -133,15 +133,24 @@ flowchart LR
 
 ### 同类项目
 
-用大模型把 TypeScript 编译器搬到其他语言的开源项目已经不止一个，本仓库是其中之一。本仓库的上游，以及另外两个方向相同的项目：
+用大模型把 TypeScript 编译器搬到其他语言的开源项目已经不止一个，本仓库是其中之一。本仓库的上游，以及方向相同的其他项目：
 
-| 项目 | 语言 | 做法 |
-| --- | --- | --- |
-| [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs)（`typescript-cs` 分支） | C# | 本仓库的上游。不逐文件翻译，按职责重新切分，多个 Go 函数可合并为一个 C# 实现，C# 代码量约为 Go 版的一半；每处与 Go 的差异记入台账 |
-| [typescript-csharp](https://github.com/239573049/typescript-csharp) | C# | 一比一移植，.NET 10 NativeAOT，与官方仓库基线逐字节比对 |
-| [ts-rust](https://github.com/pingdotgg/ts-rust) | Rust | 用大模型把 TypeScript 的 Go 版编译器整个移植成 Rust |
+| 项目                                                                                                 | 语言   | 做法                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs)（`typescript-cs` 分支） | C#   | 本仓库的上游。不逐文件翻译，按职责重新切分，多个 Go 函数可合并为一个 C# 实现，C# 代码量约为 Go 版的一半；每处与 Go 的差异记入台账                                                                    |
+| [typescript-csharp](https://github.com/239573049/typescript-csharp)                                | C#   | 一比一移植，.NET 10 NativeAOT，与官方仓库基线逐字节比对                                                                                                          |
+| [ts-rust](https://github.com/pingdotgg/ts-rust)                                                    | Rust | Theo Browne 用大模型把 TypeScript 的 Go 版编译器整个移植成 Rust，现已并入 tsrs                                                                                    |
+| [tsrs](https://github.com/oxc-project/tsrs)                                                        | Rust | Cloudflare 与 VoidZero 协作、并入 Oxc 工具链的移植，与 TypeScript 团队密切合作；明确不做 fork，覆盖 LSP 与内容映射；同 worker 数下较 TypeScript 7.0 快至多 8 倍、内存少约 70%（Cloudflare 口径） |
 
-本节背景与项目概况整理自周杰DotNet[《TypeScript-Go 编译器，有人用 C# 重写吗？》](https://mp.weixin.qq.com/s/SIdbv7K8Yj4zavexxrmCLA)（2026-10-20）。
+本节背景与项目概况整理自：
+
+周杰DotNet[《TypeScript-Go 编译器，有人用 C# 重写吗？》](https://mp.weixin.qq.com/s/SIdbv7K8Yj4zavexxrmCLA)（2026-10-20）
+
+Cloudflare 博客[《Introducing tsrs: a Port of TypeScript to Rust》](https://blog.cloudflare.com/typescript-rust-port/)（2026-10-20）
+
+
+
+本仓库是 [hez2010/TypeScript](https://github.com/hez2010/TypeScript/tree/typescript-cs) `typescript-cs` 分支的优化版，自该分支的 `f29aeb9f` 处独立，此后的性能优化与质量工作主要使用 DeepSeek V4.1 Flash 和 step-5-preview 完成；git 历史仅保留 C# 工作的提交（作者、日期与提交信息逐字保留），上游 TypeScript/JavaScript 与 Go 实现的历史不在本仓库。
 
 ## 已知边界
 
