@@ -112,6 +112,11 @@ internal static class Program
                 Console.WriteLine($"RPC safety: {RpcTests.SafetyAsync().GetAwaiter().GetResult()} assertions");
                 return 0;
             }
+            if (args.Length == 1 && args[0] == "--hostile-input-safety"u8)
+            {
+                Console.WriteLine($"Hostile input safety: {HostileInputTests.SafetyAsync().GetAwaiter().GetResult()} assertions");
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--api-session-lines"u8)
             {
                 ApiSessionTests.LinesAsync().GetAwaiter().GetResult();

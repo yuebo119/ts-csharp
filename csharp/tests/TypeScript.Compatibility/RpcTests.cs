@@ -61,6 +61,23 @@ internal static class RpcTests
             using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(header));
             Check(await Error(new RpcWire(stream, Stream.Null, false, 1024).ReadAsync(token).AsTask()) is InvalidDataException, "Invalid JSON-RPC header rejected");
         }
+        // A declared length is not an allocation oracle: 64 MB declared with no body must fail at
+        // EOF without allocating the declared size (the previous shape allocated it up front).
+        long allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("Content-Length: 64000000\r\n\r\n")))
+        {
+            Check(await Error(new RpcWire(stream, Stream.Null, false, Array.MaxLength).ReadAsync(token).AsTask()) is EndOfStreamException,
+                "Header-only large frame fails at EOF");
+        }
+        long allocatedAfter = GC.GetTotalAllocatedBytes(precise: true);
+        Check(allocatedAfter - allocatedBefore < 8 * 1024 * 1024,
+            $"Header-only frame allocated {allocatedAfter - allocatedBefore} bytes");
+        // Header lines are capped independently of the payload limit.
+        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("X-Fill: " + new string('a', 16 * 1024))))
+        {
+            Check(await Error(new RpcWire(stream, Stream.Null, false, 100_000).ReadAsync(token).AsTask()) is InvalidDataException,
+                "Oversized header line rejected");
+        }
 
         // Original ipc timing_test.go: all accumulator, ordering, precision, and reset assertions.
         var timing = new RpcTiming(true); timing.Record("getSourceFile"u8, 2); timing.Record("getSymbolAtPosition"u8, 0.5);

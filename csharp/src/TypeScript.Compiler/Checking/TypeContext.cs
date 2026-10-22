@@ -1,4 +1,5 @@
 using TypeScript.Compiler.Text;
+using System.Buffers;
 using System.Numerics;
 using TypeScript.Compiler.Ast;
 using TypeScript.Compiler.Binding;
@@ -449,10 +450,28 @@ internal readonly struct TypeCacheKey : IEquatable<TypeCacheKey>
 
     internal TypeCacheKey(ReadOnlySpan<Type> types)
     {
-        Span<long> values = stackalloc long[types.Length];
-        for (int i = 0; i < types.Length; i++)
-            values[i] = types[i].Id;
-        this = new TypeCacheKey(values);
+        // The key owns its values below, so the bounded path copies anyway. The stack size must
+        // never come from source text: a tuple or union sized by the input overflowed the thread
+        // stack at about 200k elements, and STATUS_STACK_OVERFLOW cannot be caught.
+        if (types.Length <= StackBuffer)
+        {
+            Span<long> values = stackalloc long[StackBuffer];
+            for (int i = 0; i < types.Length; i++)
+                values[i] = types[i].Id;
+            this = new TypeCacheKey(values[..types.Length]);
+            return;
+        }
+        long[] rented = ArrayPool<long>.Shared.Rent(types.Length);
+        try
+        {
+            for (int i = 0; i < types.Length; i++)
+                rented[i] = types[i].Id;
+            this = new TypeCacheKey(rented.AsSpan(0, types.Length));
+        }
+        finally
+        {
+            ArrayPool<long>.Shared.Return(rented);
+        }
     }
 
     private TypeCacheKey(ReadOnlySpan<long> values)

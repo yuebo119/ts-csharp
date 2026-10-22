@@ -161,7 +161,7 @@ internal sealed class CompilationCapture : IAsyncDisposable
         var node = pool.Count > 0 ? pool.Pop() : new FrameNode();
         node.Parent = currentFrame;
         currentFrame = node;
-        return new ProbeMark(GC.GetAllocatedBytesForCurrentThread(), Stopwatch.GetTimestamp(), node);
+        return new ProbeMark(GC.GetAllocatedBytesForCurrentThread(), Stopwatch.GetTimestamp(), node, Environment.CurrentManagedThreadId);
     }
 
     [ThreadStatic]
@@ -172,7 +172,17 @@ internal sealed class CompilationCapture : IAsyncDisposable
     {
         if (mark.Node is not { } node)
             return;
-        // Always unwind the frame stack, even when this frame is not being recorded.
+        if (mark.ThreadId != Environment.CurrentManagedThreadId)
+        {
+            // The frame suspended and resumed on another thread. The frame stack and its pool are
+            // thread-static state owned by the starting thread: unwinding here would overwrite this
+            // thread's chain, and recycling would use a pool this thread does not own (the null-pool
+            // crash this guard replaces). Per-thread allocation deltas cannot be combined after the
+            // hop, so the frame is dropped from attribution instead of reported against the wrong
+            // thread.
+            return;
+        }
+        // Same thread: unwind the frame stack, even when this frame is not being recorded.
         currentFrame = node.Parent;
         if (Current is not { } capture)
         {
@@ -201,23 +211,28 @@ internal sealed class CompilationCapture : IAsyncDisposable
             Parent = null;
             Bytes = 0;
             ChildBytes = 0;
-            nodePool!.Push(this);
+            // The owning thread always has a pool (Mark creates it). A null pool can only mean the
+            // node reached Recycle from another thread; dropping it is cheaper than pushing into a
+            // pool that belongs to a different thread.
+            nodePool?.Push(this);
         }
     }
 
     // Thread-static rather than AsyncLocal: an AsyncLocal write per frame allocates, and that
-    // allocation lands in the parent's frame. The trade-off matches the assumption the inclusive
-    // numbers already make - frames complete synchronously on their starting thread - so a frame
-    // that suspends across threads only loses its exclusive attribution, not its inclusive one.
+    // allocation lands in the parent's frame. Frames that suspend and resume on another thread are
+    // therefore not attributed at all (see Report): their per-thread allocation deltas cannot be
+    // combined after the hop, and the alternatives are a cross-thread frame-stack write or the
+    // null-pool crash this shape previously had.
     [ThreadStatic]
     private static FrameNode? currentFrame;
 
     /// <summary>Inclusive allocation and time captured at the start of a probe frame.</summary>
-    internal readonly struct ProbeMark(long allocated, long started, FrameNode? node)
+    internal readonly struct ProbeMark(long allocated, long started, FrameNode? node, int threadId)
     {
         internal readonly long Allocated = allocated;
         internal readonly long Started = started;
         internal readonly FrameNode? Node = node;
+        internal readonly int ThreadId = threadId;
     }
     private readonly long started = Stopwatch.GetTimestamp();
     private readonly long allocated = GC.GetTotalAllocatedBytes();

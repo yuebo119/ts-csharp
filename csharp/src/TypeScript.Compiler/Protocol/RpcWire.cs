@@ -30,6 +30,13 @@ internal sealed class RpcWire(Stream input, Stream output, bool binary, int maxi
 {
     private readonly byte[] buffer = new byte[4096];
     private int position, available;
+    // A declared payload length is not an allocation oracle: a peer can send "Content-Length:
+    // 2000000000" and nothing else. Payloads below this size keep the exact allocation; larger
+    // ones grow only as bytes arrive, so an absent body costs the initial buffer, not the header.
+    private const int ExactPayloadLimit = 64 * 1024;
+    // Header lines are tiny (Content-Length plus a few optional fields); a frame with a megabyte
+    // of header text is malformed regardless of how large its payload may legitimately be.
+    private const int MaximumHeaderLineLength = 8 * 1024;
     private async ValueTask<int> ByteAsync(CancellationToken cancellation)
     {
         if (position == available)
@@ -45,11 +52,41 @@ internal sealed class RpcWire(Stream input, Stream output, bool binary, int maxi
     {
         if (length < 0 || length > maximumPayloadLength || length > Array.MaxLength)
             throw new InvalidDataException("RPC payload length exceeds the configured limit");
-        byte[] result = GC.AllocateUninitializedArray<byte>((int)length);
-        int count = Math.Min(result.Length, available - position);
-        buffer.AsSpan(position, count).CopyTo(result); position += count;
-        await input.ReadExactlyAsync(result.AsMemory(count), cancellation).ConfigureAwait(false);
-        return result;
+        if (length <= ExactPayloadLimit)
+        {
+            byte[] exact = GC.AllocateUninitializedArray<byte>((int)length);
+            int exactBuffered = Math.Min(exact.Length, available - position);
+            buffer.AsSpan(position, exactBuffered).CopyTo(exact); position += exactBuffered;
+            await input.ReadExactlyAsync(exact.AsMemory(exactBuffered), cancellation).ConfigureAwait(false);
+            return exact;
+        }
+        byte[] payload = ArrayPool<byte>.Shared.Rent(ExactPayloadLimit);
+        int total = 0;
+        try
+        {
+            int buffered = Math.Min((int)length, available - position);
+            buffer.AsSpan(position, buffered).CopyTo(payload); position += buffered;
+            total = buffered;
+            while (total < length)
+            {
+                if (total == payload.Length)
+                {
+                    int grownLength = (int)Math.Min(length, (long)payload.Length * 2);
+                    byte[] grown = ArrayPool<byte>.Shared.Rent(grownLength);
+                    payload.AsSpan(0, total).CopyTo(grown);
+                    ArrayPool<byte>.Shared.Return(payload);
+                    payload = grown;
+                }
+                int read = await input.ReadAsync(payload.AsMemory(total), cancellation).ConfigureAwait(false);
+                if (read == 0) throw new EndOfStreamException("Truncated RPC frame");
+                total += read;
+            }
+            return payload.AsSpan(0, total).ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(payload);
+        }
     }
     internal async ValueTask<RpcMessage?> ReadAsync(CancellationToken cancellation)
     {
@@ -87,7 +124,7 @@ internal sealed class RpcWire(Stream input, Stream output, bool binary, int maxi
                 first = false;
                 line.Write([(byte)value]);
                 if (value == '\n') break;
-                if (line.WrittenCount > maximumPayloadLength) throw new InvalidDataException("RPC header exceeds the configured limit");
+                if (line.WrittenCount > MaximumHeaderLineLength) throw new InvalidDataException("RPC header exceeds the configured limit");
             }
             if (line.WrittenSpan.SequenceEqual("\r\n"u8)) break;
             int colon = line.WrittenSpan.IndexOf((byte)':');
