@@ -70,7 +70,7 @@ mech     0.0ms  calls=1    s:deferred
 | 2 | 222.5 ms | 206.0 ms | 92.6% |
 | 3 | 259.4 ms | 242.4 ms | 93.4% |
 
-偏移 1647 即 `export type APIResponse<Request extends APIRequest = APIRequest> = ...`。同文件其余 11 条 `TypeAliasDeclaration` 合计约 16 ms，最大一条 5.6 ms。r41 的「单条语句占 93%」在这一层复现。文件内具名帧只解释该文件全部成本的一部分：
+偏移 1647 即 `export type APIResponse<Request extends APIRequest = APIRequest> = ...`。同文件其余 11 条 `TypeAliasDeclaration` 合计约 16 ms，最大一条 5.6 ms。r41 的「单条语句占 93%」在这一层复现。文件内具名帧只解释该文件全部成本的一部分（下列读数取自文件总耗时 437.6 ms 的那次运行，各次运行帧值随总耗时同比浮动）：
 
 ```
 mech    81.4ms  calls=586      addUnionTypes
