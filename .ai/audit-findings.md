@@ -600,11 +600,11 @@ LSP 并发压力（`.ai/scratch/concurrency/lsp-stress.mjs`）：初始化 + 20 
 
 watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块出现清除 TS2307、模块消失恢复 TS2307、`node_modules` 包出现后被新代际解析，全部通过。
 
-并发相关 safety 旗标各跑 3 次：`--incremental-safety` 3/3、`--lsp-safety` 3/3、`--syntax-services-safety` 3/3、`--rpc-safety` 3/3。
+并发相关 safety 旗标各跑 3 次：`--incremental-safety` 3/3、`--lsp-safety` 3/3、`--syntax-services-safety` 3/3、`--rpc-safety` 3/3。门禁修复后（提交 055d01c）套件枚举 96 旗标、93 通过、失败集合仍是三项基线，此前从未运行的两个双参数旗标各以 4 与 51 断言通过。
 
 ### 6. 发现卡片
 
-**F-003-01 门禁枚举漏掉参数化 safety 旗标（`--lsp-native-watch-safety` 与 `--developer-safety` 从未在套件运行）**
+**F-003-01 门禁枚举漏掉参数化 safety 旗标（`--lsp-native-watch-safety` 与 `--developer-safety` 从未在套件运行）（closed，提交 055d01c）**
 
 维度：3.9　位置：`csharp/tools/run-safety-suite.mjs:26-28`（枚举正则）、`csharp/tests/TypeScript.Compatibility/Program.cs:26,65`（两个双参数旗标）
 现象：套件枚举到的 94 个旗标里没有这两个；它们需要「旗标 + 目录」两个参数，直接单参数调用会走到兜底分支抛 `ArgumentException`（exit 1）。给出目录后两者正常通过（`--lsp-native-watch-safety` 4 断言、`--developer-safety` 51 断言）。
@@ -612,7 +612,7 @@ watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块�
 复现：`node -e` 复刻正则可得 94 项且两项缺失；`dotnet <harness> --lsp-native-watch-safety .ai/scratch/testwatch` 通过。
 影响：门禁盲区（原生 watcher 生命周期与开发者模式断言不受保护），与第 1 轮 F-001-02/F-001-04 同族。
 置信度：[事实]
-建议：测。套件对双参数旗标补枚举（或把两旗标改成「旗标 + 可选目录」形态，缺省用临时目录）。
+建议：测。套件对双参数旗标补枚举（或把两旗标改成「旗标 + 可选目录」形态，缺省用临时目录）。（已按补枚举修复：套件 94→96 旗标、93/96 通过、失败集合仍为三项基线，见 §5 与提交 055d01c）
 
 **F-003-02 跨代际绑定缓存陈旧风险（机制存在，watch 实验未复现）**
 
@@ -644,6 +644,7 @@ watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块�
 | 单线程对照与重复跑 | done | §5；4 夹具全等，LSP 3/3 |
 | 非确定性探测（10 次） | done | §5 |
 | 只读边界 | done | 无产品代码改动；驱动脚本在 `.ai/scratch/concurrency/` |
+| 修复（模式 C，F-003-01 门禁补枚举） | done | 提交 055d01c；套件 94→96 旗标、93/96 通过、失败集合仍为三项基线 |
 
 ### 8. 口径与局限
 
@@ -655,7 +656,7 @@ watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块�
 ### 9. 下轮候选（按证据强度 × 影响面）
 
 1. **架构与契约（3.6/3.5）**——第 1 轮 F-001-11 记 `Storage` 与 `Experiments` 在 safety 套件下 0 覆盖，先判定死代码还是未测代码；同时把「门禁盲区」族（F-001-02/04、F-003-01）一次收口。
-2. **修复轮（模式 C）**——F-003-01 是纯测试设施改动（补两个双参数旗标的枚举），量级约一小时，可与门禁补测同批做。
+2. **修复轮（模式 C）**——F-003-01 已完成（提交 055d01c：套件 94→96 旗标）。下一步修复建议留给架构轮的判定结果。
 3. **并发深化**——`--api -async` 快照并发与线程检查器（若可得）是唯一能把本轮「未观测到」推进到「排除」的手段。
 
 ### 10. 一句话结论
