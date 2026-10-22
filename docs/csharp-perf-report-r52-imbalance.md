@@ -51,9 +51,9 @@ phase:partition#3:    0.135s
 | `src/api/sync/api.ts` | 315 KB | 41,057 | 233~291 ms |
 | `src/ast/is.generated.ts` | 129 KB | 20,725 | 129~177 ms |
 
-`proto.ts` 的权重在全程序 291 个文件里最低，检查成本却占关键分区约 63%。权重与成本在这个文件上方向相反，不是低估 70 倍（r39 口径），而是排序反转。
+`proto.ts` 的权重在全程序 291 个文件里最低，检查耗时却占关键分区约 55%~63%（该文件 230~442 ms，分区 401 ms 时占 63%）。权重与成本在这个文件上方向相反，不是低估 70 倍（r39 口径），而是排序反转。
 
-`proto.ts` 的全部成本落在一个结构上。定为 DSL 标签的语句级计时（filter=proto.ts）：
+`proto.ts` 的全部成本落在一个结构上。语句级计时（filter=proto.ts）第一版只按 kind 聚合：
 
 ```
 mech   435.0ms  calls=12   stmt:266      // TypeAliasDeclaration
@@ -62,7 +62,15 @@ mech     0.2ms  calls=1    s:tail
 mech     0.0ms  calls=1    s:deferred
 ```
 
-12 个类型别名声明吃掉 435.0 ms（每个 36.3 ms），同文件其他语句合计不超过 2.5 ms。文件内具名帧只解释其中一部分：
+按此得出「12 条别名平均每条 36.3 ms」是错的，聚合值被单条主导。把源偏移打进标签重测三次：
+
+| 运行 | 文件总耗时 | 单条 `TypeAliasDeclaration@1647` | 份额 |
+| --- | ---: | ---: | ---: |
+| 1 | 230.5 ms | 211.6 ms | 91.8% |
+| 2 | 222.5 ms | 206.0 ms | 92.6% |
+| 3 | 259.4 ms | 242.4 ms | 93.4% |
+
+偏移 1647 即 `export type APIResponse<Request extends APIRequest = APIRequest> = ...`。同文件其余 11 条 `TypeAliasDeclaration` 合计约 16 ms，最大一条 5.6 ms。r41 的「单条语句占 93%」在这一层复现。文件内具名帧只解释该文件全部成本的一部分：
 
 ```
 mech    81.4ms  calls=586      addUnionTypes
@@ -74,9 +82,9 @@ mech     8.1ms  calls=734      typeFromNode
 mech     5.8ms  calls=454      resolveMembers
 ```
 
-`symbolTypesGet` 318,036 次除以 12 个别名得 26,503 次每个别名，等于 `keyof APIMethodInfo` 的成员数（29,642）。即每个别名对同一批联合成员各做一次符号类型查询。
+`symbolTypesGet` 在该文件内调用 318,036 次，按上表几乎全部来自那一条语句，次数与 `keyof APIMethodInfo` 的成员数 29,642 同阶。
 
-读该文件源码可见 12 个别名的构成：1 个泛型 `APIMethodsReturning<T>`，6 个非泛型实例化（`SourceFileResponse`、`SymbolResponse`、`SymbolResponse[]`、`SignatureResponse`、`TypeResponse`、`TypeResponse[]`），1 个 `Exclude<keyof APIMethodInfo, "batchRequests">`，1 个 `{[K in BatchableAPIMethod]: ...}[BatchableAPIMethod]`。其中约 8 个各自完整扫一遍 29,642 成员。
+该文件另有 1 个泛型 `APIMethodsReturning<T>`、6 个非泛型实例化（`SourceFileResponse`、`SymbolResponse`、`SymbolResponse[]`、`SignatureResponse`、`TypeResponse`、`TypeResponse[]`）、`Exclude<keyof APIMethodInfo, "batchRequests">` 与 `{[K in BatchableAPIMethod]: ...}[BatchableAPIMethod]`，合计约 8 处对 29,642 成员的完整扫描，但它们总共只要约 16 ms。所以昂贵处不是「扫 29,642 个成员」本身，而是 `APIResponse` 那条语句的分发展开形态。
 
 ## 4. 路径 A：提高 checker 数（否决）
 
@@ -121,21 +129,20 @@ r39-L3-a 的三个重开前置条件现状：
 
 结论：**维持关闭**。
 
-## 6. 路径 C：压低 proto.ts 自身成本（本轮不立项）
+## 6. 路径 C：压低 proto.ts 自身成本（本轮不立项，归口 r41）
 
-`proto.ts` 是必要工作而非重复劳动，三条证据：
+成本集中在单个别名 `APIResponse`（源偏移 1647），占该文件 92%~93%。r41 已把它拆到机制层：`UnionAsync` 201.8 ms / 636 次，其中 `AddUnionTypes` 196.4 ms 占 48%，大 union（N=129~512）176 次调用占 200 ms，去重重复率仅 2.8%。三条候选据此关闭（比较器常数、按比较对缓存、分发共享排序基准，见 r43 与 r46），其中可兑现的排序成本已由 r48 多段归并拿走。
 
-1. 8 次全量扫描各自产出不同的方法名联合（`APIMethodsReturning<SourceFileResponse>`、`<SymbolResponse>`、`<SymbolResponse[]>`、`<SignatureResponse>`、`<TypeResponse>`、`<TypeResponse[]>`、`Exclude<keyof APIMethodInfo, "batchRequests">`、`APIRequest`），不存在可合并的同一结果。
-2. 每别名 26,503 次符号类型查询已被缓存（`symbolTypesGet` 单次 0.1 µs），共享的是 `APIMethodInfo[K]` 的属性类型解析，且已经在共享。
-3. 具名帧只解释 437 ms 中的约 150 ms，其余落在对 29,642 成员逐个求值的循环体内，每成员约 0.9 µs 的模板实例化与条件求值。
+本轮补充的负结果：同文件另外 8 处对 29,642 成员的完整扫描合计只要约 16 ms，即成员规模本身不是成本源，成本在 `APIResponse` 按 `Request extends APIRequest` 逐分支分发时每分支的索引访问展开。这也解释了为什么静态权重必然失明：成本由单条语句的展开形态决定，不随文件节点数或字节数伸缩。
 
-这与 r43 的六项关闭清单同源：本仓检查相位是必要工作的常数问题。要动它必须走表示层（跨 29,642 成员循环的每成员常数），属 r35 W3 家族，不是本轮目标。
+这与 r43 的六项关闭清单同源：检查相位是必要工作的常数问题。要动它必须走表示层（跨成员循环的每成员常数），属 r35 W3 家族，不是本轮目标。
 
 ## 7. 复现口径与已知边界
 
-- 探针 `TSHARP_SPLIT2`（每文件 `checkFileTotal`、每分区耗时、每语句 kind 计时），`TSHARP_FILE_FILTER` 限定单文件，全部已回退。
+- 探针 `TSHARP_SPLIT2`（每文件 `checkFileTotal`、每分区耗时、每语句按 kind 与源偏移计时），`TSHARP_FILE_FILTER` 限定单文件，全部已回退。
 - 分区线程时间合计是确定性量；`Total` 与 `checkPool` 墙钟跨会话漂移 ±30%，本报告所有占比结论只基于前者。
-- 峰值工作集用 `Start-Process -PassThru` 后轮询 `WorkingSet64`（10 ms 间隔）采样最大值，非精确峰值。
+- 语句级计时第一版只按 kind 聚合，把 435.0 ms 的 12 次合计误读成「每条 36.3 ms」，实际由单条 211.6~242.4 ms 主导。聚合标签会隐藏分布，逐语句归因必须把语句身份（源偏移）打进标签。
+- 峰值工作集用 `Start-Process -PassThru` 后轮询 `WorkingSet64`（10 ms 间隔）采样最大值，非精确峰值。空缺的那次 `PeakWorkingSet64` 在进程退出后读不到，读到 0。
 - 每次运行前删除夹具根的 `tsconfig.tsbuildinfo` 与 `tsconfig.enums.tsbuildinfo`（r44/r45 实测的污染陷阱）。
 
 ## 8. 剩余空间
