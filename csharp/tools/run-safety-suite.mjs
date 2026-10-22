@@ -3,6 +3,7 @@
 // （docs/csharp-perf-report-r15/r17 与 docs/csharp-perf-audit-epsl-1.md 的口径）。
 // 基线外的失败 = 门禁红。用法：node csharp/tools/run-safety-suite.mjs [--harness <dll>]
 import { access, mkdtemp, readFile } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -38,27 +39,48 @@ const tests = [...new Set([
 const twoArgument = new Set(
     [...source.matchAll(/args is \[var \w+, var \w+\] && \w+ == "(--[^"]+-safety)"u8/g)].map(match => match[1]));
 const scratch = await mkdtemp(path.join(os.tmpdir(), "safety-suite-"));
-console.log(`safety flags enumerated: ${tests.length} (${twoArgument.size} take a directory argument)`);
+const only = option("--only");
+const recordFloors = process.argv.includes("--record-floors");
+const floorsPath = path.join(root, "csharp/tools/safety-floors.json");
+let floors = {};
+try { floors = JSON.parse(await readFile(floorsPath, "utf8")); } catch { /* first run / recording */ }
+const selected = only ? tests.filter(test => test === only) : tests;
+if (only && selected.length === 0) { console.error(`unknown safety flag: ${only}`); process.exit(1); }
+console.log(`safety flags enumerated: ${tests.length} (${twoArgument.size} take a directory argument)${only ? `; running ${only}` : ""}`);
 
 const run = args => new Promise(resolve => {
     const child = spawn("dotnet", [harness, ...args], { cwd: root, windowsHide: true });
     child.stdin.end();
-    const err = [];
+    const out = [], err = [];
+    child.stdout.on("data", chunk => out.push(chunk));
     child.stderr.on("data", chunk => err.push(chunk));
-    child.on("close", code => resolve({ code, err: err.join("") }));
+    child.on("close", code => resolve({ code, out: Buffer.concat(out).toString(), err: err.join("") }));
 });
 
+const observed = {};
 let pass = 0;
 const failed = [];
-for (const test of tests) {
+for (const test of selected) {
     const args = twoArgument.has(test) ? [test, scratch] : [test];
-    const { code } = await run(args);
-    if (code === 0) pass++;
+    const { code, out } = await run(args);
+    let assertions = null;
+    for (const match of out.matchAll(/(\d+) assertions/g)) assertions = Number(match[1]);
+    if (assertions !== null) observed[test] = assertions;
+    let ok = code === 0;
+    if (ok && assertions !== null && floors[test] !== undefined && assertions < floors[test]) {
+        console.error(`ASSERTION FLOOR: ${test} produced ${assertions}, expected at least ${floors[test]}`);
+        ok = false;
+    }
+    if (ok) pass++;
     else failed.push(test);
+}
+if (recordFloors) {
+    writeFileSync(floorsPath, JSON.stringify(observed, null, 2) + "\n");
+    console.log(`recorded ${Object.keys(observed).length} assertion floors to ${floorsPath}`);
 }
 
 const contentMappers = await run(["--content-mappers", root]);
-console.log(`safety: ${pass}/${tests.length} pass; failures: ${failed.join(" ") || "(none)"}`);
+console.log(`safety: ${pass}/${selected.length} pass; failures: ${failed.join(" ") || "(none)"}`);
 console.log(`content-mappers: exit ${contentMappers.code}`);
 
 const outOfBaseline = failed.filter(test => !baseline.has(test));

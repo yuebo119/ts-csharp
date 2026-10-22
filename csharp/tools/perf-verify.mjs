@@ -1,5 +1,7 @@
-// 逐字节产物门禁（仓内夹具版）：对 8 个夹具各跑一次全量构建，记录退出码、stdout 哈希
+// 逐字节产物门禁（仓内夹具版）：对 7 个夹具各跑一次全量构建，记录退出码、stdout 哈希
 // 与发射文件（.js/.d.ts/.map）哈希；可选与既有记录对比。tsbuildinfo 与源码树不参与比较。
+// errdense 同时把 5000 行诊断文本纳入 stdout 哈希（此前 6 个夹具的 stdout 全为空，
+// 诊断面在逐字节门禁里没有输入）。
 // 用法：
 //   node csharp/tools/perf-verify.mjs --label <标签> --binary <构建输出目录> [--compare <标签>] [--directory <dir>]
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -21,7 +23,7 @@ if (!label || !binaryDirectory) {
     process.exit(1);
 }
 
-const specs = ["medium", "huge", "tiny512", "dtsheavy", "small3", "longline"];
+const specs = ["medium", "huge", "tiny512", "dtsheavy", "small3", "longline", "errdense"];
 const sha = data => createHash("sha256").update(data).digest("hex");
 const exe = process.platform === "win32" ? "tsgo-cs.exe" : "tsgo-cs";
 const binary = path.resolve(binaryDirectory, exe);
