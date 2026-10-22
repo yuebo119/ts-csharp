@@ -32,6 +32,9 @@ public sealed partial class IncrementalProgram
         Func<Utf8String, BuildInfo, CancellationToken, ValueTask>? writeBuildInfo, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
+        // Wall attribution for the emit phase. "Emit time (summed)" is the per-file total, which is
+        // several times the phase's wall clock and cannot be read as a budget.
+        using var emitTotal = CompilationCapture.Measure("phase:emitTotal"u8, traced: false);
         List<Diagnostic> errors = [];
         List<Utf8String> emitted = [];
         List<SourceMapEmitResult> maps = [];
@@ -94,7 +97,45 @@ public sealed partial class IncrementalProgram
                     pool = checkerPool ??= await Program.CreateCheckerPoolAsync(false, cancellation).ConfigureAwait(false);
                     workers = Math.Max(1, Math.Min(requested > 1 ? requested : pool.Count, work.Count));
                 }
-                if (workers > 1)
+                if (workers > 1 && Environment.GetEnvironmentVariable("TSHARP_EMIT_ORDER") != "queue")
+                {
+                    // One task per owner checker. A file can only be emitted by the checker that owns
+                    // it, so on a shared queue a worker that takes a file whose owner is busy can do
+                    // nothing until that owner releases: measured on the real-world fixture, 113
+                    // files spent 364-395 ms of worker time blocked against 876-926 ms of work, and
+                    // the phase ended ~30 ms after the last owner task could have. Giving every owner
+                    // its own task removes the blocking entirely (blocked time 0.0 ms) and ends the
+                    // phase at the heaviest owner's load instead. Each owner walks its own files in
+                    // the order its checker already visited them while checking, which is the order
+                    // its caches are warm in; sorting them by cost instead measured 15% more emit
+                    // work. Results are stored by their original index, so publication order does not
+                    // change. TSHARP_EMIT_ORDER=queue selects the shared queue again for an A/B run.
+                    var byOwner = new List<int>[pool!.Count];
+                    for (int owner = 0; owner < byOwner.Length; owner++) byOwner[owner] = [];
+                    for (int index = 0; index < work.Count; index++)
+                        byOwner[pool.OwnerOf(work[index].File.Syntax)].Add(index);
+                    async Task EmitOwnerAsync(int owner)
+                    {
+                        var indices = byOwner[owner];
+                        if (indices.Count == 0) return;
+                        using var lease = await pool.AcquireAsync(work[indices[0]].File.Syntax, cancellation).ConfigureAwait(false);
+                        foreach (int index in indices)
+                        {
+                            var (file, _, pending) = work[index];
+                            bool javascript = (pending & FileEmitKind.AllJavaScript) != 0;
+                            bool declarations = (pending & FileEmitKind.AllDeclarations) != 0;
+                            results[index] = await Program.EmitWithCheckerAsync(new()
+                            {
+                                SourceFiles = [file.Syntax], WriteFile = Write,
+                                Only = javascript && declarations ? EmitOnly.All : javascript ? EmitOnly.JavaScript : EmitOnly.Declarations,
+                                CachedDeclaration = CachedDeclarationFor(file.Syntax.FileName, declarations)
+                            }, lease.Checker, cancellation).ConfigureAwait(false);
+                        }
+                    }
+                    await Task.WhenAll(Enumerable.Range(0, byOwner.Length)
+                        .Select(owner => Task.Run(() => EmitOwnerAsync(owner), cancellation))).ConfigureAwait(false);
+                }
+                else if (workers > 1)
                 {
                     await Parallel.ForAsync(0, work.Count, new ParallelOptions { MaxDegreeOfParallelism = workers, CancellationToken = cancellation }, async (index, token) =>
                     {

@@ -52,10 +52,13 @@ internal sealed class CheckerPool
         return new(program, checkers, assignments);
     }
 
+    internal int OwnerOf(SourceFileNode file) => associations.TryGetValue(file, out int owner)
+        ? owner
+        : throw new ArgumentException("Source file does not belong to this checker pool", nameof(file));
+
     internal async ValueTask<Lease> AcquireAsync(SourceFileNode? file = null, CancellationToken cancellation = default)
     {
-        int index = file is null ? 0 : associations.TryGetValue(file, out int owner)
-            ? owner : throw new ArgumentException("Source file does not belong to this checker pool", nameof(file));
+        int index = file is null ? 0 : OwnerOf(file);
         await gates[index].WaitAsync(cancellation);
         return new(checkers[index], gates[index]);
     }
