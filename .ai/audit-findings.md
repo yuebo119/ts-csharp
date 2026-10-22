@@ -509,3 +509,155 @@
 ### 9. 一句话结论
 
 本仓对恶意输入的抗性属**「有守卫但漏路径」**，但参考实现差分（§7.6）把结论切成两半：本仓独有的只有两类崩溃（探针跨线程 NRE、无界 `stackalloc`），已修；其余项多数与参考实现同形（条件类型双方不终止、嵌套对象双方挂、LSP 帧长预分配双方都有），差异集中在本仓的常数与内存放大（10k 嵌套类型参考 2.05 s 对本仓 >30 s，20k 嵌套对象参考 123 MiB 对本仓 2.49 GiB）。因此后续不是「补安全守卫」，而是按「量级 10×」触发条件重开性能/内存轴的定价。
+
+---
+
+## 第 3 轮：并发与资源生命周期（2026-10-22）
+
+模式 A 只读审计加动态探测。范围：维度 3.3（共享状态与所有权）、3.4（资源生命周期与异常路径）、3.9（并发门禁灵敏度）。产品代码零改动。
+
+### 三句话定位
+
+本轮目标面是并发与资源生命周期（共享可变状态、缓存代际、池化归还、取消可见性、并发门禁灵敏度）；性能三表只约束性能方向，该面仅有一条先例（r39 L3-a 首版 NRE 被 safety 意外抓到），无系统审计；本轮模式 A 只读，动态探测只用现有二进制与安全套件。
+
+### 0. 基线与收尾状态
+
+| 项 | 实测 |
+| --- | --- |
+| 产品二进制 | `86b5a9b` 构建产物（含第 2 轮三项修复），本轮零改动 |
+| 构建与门禁 | 未重建；沿用 `86b5a9b` 的 0/0、`BYTECHECK-OK (audit-r02-post == audit-r02-fix-final)`、94 旗标 91 通过 |
+| `git status` | 仅 `?? .ai/scratch/` `?? .zcode/` |
+
+### 1. 共享可变状态风险表
+
+| 站点 | 保护机制 | 结论 |
+| --- | --- | --- |
+| `ModuleResolver` 解析缓存与 `generation` | `lock (gate)`，`Invalidate()` 全在临界区内 | 有锁且临界区完整 |
+| `ModuleResolver.directories/files`（r51 存在性缓存） | `ConcurrentDictionary`（比较器随 `fs.CaseSensitive`） | 并发安全；代际由「每程序构建新建 resolver」保证 |
+| `PackageJsonCache` | 自有锁（r57 实测临界区约 26 µs） | 覆盖 |
+| `Binder` 静态 `Cache`（`ConditionalWeakTable<SourceFileNode, BindingCache>`）与 `PatternIdentities` | 弱表 + 每文件 `SemaphoreSlim` | 覆盖；残余代际风险见 F-003-02 |
+| `Symbol`/`Binder`/`PatternIdentity` 的 `nextId` | `Interlocked` | 覆盖 |
+| `CompilationCapture` 探针帧、`nodePool`、`currentFrame` | 线程静态 + 起始线程校验（`86b5a9b`） | 覆盖（第 2 轮修复） |
+| `ProjectCheckerPool` 槽位、`requests`、`fileAssociations` | `lock (sync)` + 三个信号量（`diagnostics`/`api` 为 1，`queries` 为槽位数-1） | 覆盖；`Release` 在锁内合并诊断，先锁后 `gate.Release` |
+| `ApiSession` 注册表、`disposed`、`drained`、`activeRequests` | `lock (sync)` + `Interlocked` 计数 | 覆盖 |
+| `ApiSnapshotData` 符号/节点表 | `lock (sync)` | 覆盖 |
+| `LibraryFileSystem` 静态内容缓存 | `ConcurrentDictionary`，路径为键，库内容只读 | 覆盖（跨会话共享，无变更路径） |
+| `Lazy`（Options 名称表、FormattingRules、SpanMap、DocumentSnapshot） | 默认 `ExecutionAndPublication` | 覆盖 |
+| `TypeAlgebra` 交集 scratch（`Interlocked.Exchange`） | 每 checker 独占使用 | 覆盖 |
+| `NativeProfile`（`[ThreadStatic]` 采样态 + 并发字典） | 采样线程局部，聚合字典并发 | 诊断专用；停止时并发采样未验证 |
+| `MapperProcess.pending` | `ConcurrentDictionary` + `TaskCompletionSource`，按 id 配对 | 覆盖；子进程异常退出是否 fail 全部 pending 未验证 |
+
+### 2. 缓存代际矩阵
+
+| 缓存 | 生命周期 | 清空触发 | 结论 |
+| --- | --- | --- | --- |
+| `ProjectParseCache`（键 = `ParseOptions` + 内容哈希 + 长度） | 每 workspace/program | 内容或解析选项变化；`Trim` 回收弱引用失效项 | 键含解析选项；`isolatedModules`/`verbatimModuleSyntax`/`useDefineForClassFields` 不进键（绑定会读它们），由「配置变更导致程序重建」兜住，实证见 §6 F-003-02 |
+| `ModuleResolver` 解析缓存 + 存在性缓存 + `PackageJsonCache` | 每程序构建一个新 Builder，即新 resolver | 新实例（生产路径）；`Invalidate()` 仅测试调用 | 代际正确：watch 双向探针通过（模块出现与消失都被重新探测） |
+| `Binder` 节点键绑定缓存 | 进程级，键为源文件节点 | 节点被回收（弱表） | 永久复用；受解析缓存键约束 |
+| Checker 系列缓存（`TypeNodes`/`TypeReferences`/符号类型等） | 每 `Checker` | 每程序新建 checker（`ProjectCheckerPool` 槽位随程序） | 代际安全 |
+| `ProjectCheckerPool` 槽位与文件关联 | 每 `ProjectSnapshot` | `Release`/空闲过期/请求取消/`Dispose` | 覆盖 |
+| `ApiSession` 快照注册表与批页 | 每会话 | `ReleaseAsync`/`DisposeAsync` | 覆盖 |
+| 增量状态（`IncrementalSnapshot`/buildinfo） | 每轮 | 变更集与 `AffectedFiles` | 本轮未深入（已有 r51/r54 增量门禁覆盖） |
+
+### 3. 池与租借清单（正常/异常/取消三条归还路径）
+
+| 池 | 归属 | 正常 | 异常 | 取消 | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| `Parser.nodeLists` | 每 Parser（每文件） | `try/finally` 归还 | 同（finally） | 同 | 覆盖 |
+| `StructuredMembers.availableLists` | 每 Checker | `ReturnLists` | 租时 `Clear` 自愈，展开的由 GC 回收 | 同 | 覆盖（r27 记录） |
+| `EmitContext.scopePool` | 每 EmitContext（每属主） | Start/End 成对 `ReturnScope` | 无 `try/finally`，中断即 GC 回收 | 同 | 无正确性影响，只记录 |
+| `SyntaxPrinter.statePool/partListPool` | 每 Printer（每文件） | End 时归还 | 异常路径不归还，GC 回收 | 同 | 同上 |
+| `TypeConstraints` 递归身份栈 | 每 Checker 单缓冲视图 | 不适用（值视图，无归还） | 同 | 同 | 覆盖（r35 W6 形态） |
+| `TypeAlgebra` `mergeScratch/runs/nextRuns` | 每 Checker 实例字段 | 每次调用重写或清空 | 取消后下一次调用重写 | 同 | 覆盖（多段归并 r48） |
+| `CompilationCapture.nodePool` | 线程静态 | `Recycle` 归还 | 空池丢弃 | 同 | 覆盖（第 2 轮修复） |
+| `CheckerPool.Lease` | 每槽位 | `Dispose` 释放 | `using` | `using` | 覆盖 |
+
+### 4. 取消可见性表
+
+| 位置 | 检查粒度 | 结论 |
+| --- | --- | --- |
+| 扫描器 | 语句级（有意设计，r32 记录） | 非缺陷 |
+| 解析/绑定 | 文件条目与循环内 `ThrowIfCancellationRequested` | 覆盖到文件粒度 |
+| 检查分区 | 每文件、每分区 | 覆盖 |
+| emit 属主 | 每文件 | 覆盖 |
+| 解析并发槽 | 每次解析入口 | 覆盖 |
+| 单文件内的超大循环（如超宽类型成员遍历） | 未验证 | 记残余 |
+| LSP 请求取消 | `$/cancelRequest` 后服务存活并继续应答（实测） | 覆盖 |
+| 进程级取消 | 终止后无残留进程（实测） | 覆盖 |
+
+### 5. 单线程对照与重复跑（原始读数）
+
+驱动 `.ai/scratch/concurrency/compare.mjs`：每轮把夹具复制到临时目录、删 `tsbuildinfo`，比较退出码、stdout 与全部产物 sha256。
+
+| 夹具 | 单线程 vs 默认 | 并发 10 次重跑 | 产物数 |
+| --- | --- | --- | --- |
+| medium | identical | 10/10 identical | 261 |
+| dtsheavy | identical | 10/10 identical | 154 |
+| huge | identical | 10/10 identical | 4 |
+| errdense | identical | 10/10 identical（stdout 415,450 B，含诊断顺序） | 201 |
+
+LSP 并发压力（`.ai/scratch/concurrency/lsp-stress.mjs`）：初始化 + 20 个并发请求（diagnostic/hover/completion/definition 各 5）+ 编辑后 5 个请求 + `$/cancelRequest` + shutdown/exit，3/3 全过：29 个响应、0 错误、hover 返回真实内容、退出码 0。
+
+watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块出现清除 TS2307、模块消失恢复 TS2307、`node_modules` 包出现后被新代际解析，全部通过。
+
+并发相关 safety 旗标各跑 3 次：`--incremental-safety` 3/3、`--lsp-safety` 3/3、`--syntax-services-safety` 3/3、`--rpc-safety` 3/3。
+
+### 6. 发现卡片
+
+**F-003-01 门禁枚举漏掉参数化 safety 旗标（`--lsp-native-watch-safety` 与 `--developer-safety` 从未在套件运行）**
+
+维度：3.9　位置：`csharp/tools/run-safety-suite.mjs:26-28`（枚举正则）、`csharp/tests/TypeScript.Compatibility/Program.cs:26,65`（两个双参数旗标）
+现象：套件枚举到的 94 个旗标里没有这两个；它们需要「旗标 + 目录」两个参数，直接单参数调用会走到兜底分支抛 `ArgumentException`（exit 1）。给出目录后两者正常通过（`--lsp-native-watch-safety` 4 断言、`--developer-safety` 51 断言）。
+触发：任何一轮产品改动后的门禁运行。
+复现：`node -e` 复刻正则可得 94 项且两项缺失；`dotnet <harness> --lsp-native-watch-safety .ai/scratch/testwatch` 通过。
+影响：门禁盲区（原生 watcher 生命周期与开发者模式断言不受保护），与第 1 轮 F-001-02/F-001-04 同族。
+置信度：[事实]
+建议：测。套件对双参数旗标补枚举（或把两旗标改成「旗标 + 可选目录」形态，缺省用临时目录）。
+
+**F-003-02 跨代际绑定缓存陈旧风险（机制存在，watch 实验未复现）**
+
+维度：3.3 / 3.4　位置：`Binding/Binder.cs:21,60-82`（静态节点键缓存）、`Projects/ProjectParseCache.cs:20`（键 = `ParseOptions` + 哈希 + 长度）
+现象：绑定结果按源文件节点永久缓存；解析缓存键不含 `isolatedModules`、`verbatimModuleSyntax`、`useDefineForClassFields`，而 `Binder` 读取这三项。若同一代际间改配置而不改源码且解析缓存复用节点，理论上会拿到旧选项下的绑定。
+触发：同一进程内跨代际改配置 + 源文件逐字节不变（watch/LSP/多快照 API）。
+复现：`.ai/scratch/concurrency/binding-generation.mjs`：watch 启动后把 `verbatimModuleSyntax/isolatedModules` 翻成 true，只改另一个文件触发重建、`a.ts` 保持逐字节不变。
+量级：实测**未复现**——换代后的诊断集合（TS1287×2、TS1295、TS1484）与新进程逐条一致。
+影响：静默错结果（潜在，未观测到）。
+置信度：[推断]（机制成立，当前不可达或已被程序重建兜住）
+建议：只记录。若将来出现「改配置不改源码后输出异常」，先查此处。
+
+**F-003-03 `ModuleResolver.Invalidate` 生产零调用（代际正确性靠每次构建新建 resolver）**
+
+维度：3.4　位置：`Resolution/ModuleResolver.cs:80-89`
+现象：`Invalidate()` 清空解析缓存与存在性缓存，但全仓唯一调用点是测试 `ProgramGraphTests.cs:72,81`；生产路径每次程序构建新建 resolver，因此存在性缓存天然按代际隔离。
+影响：可维护性（API 表面与生产用法不一致）。
+置信度：[事实]
+建议：只记录。注释标注测试设施，或删除该方法并让测试改用新实例。
+
+### 7. 计划对照
+
+| 专项要求 | 状态 | 说明 |
+| --- | --- | --- |
+| 共享状态风险表 | done | §1，13 个站点 |
+| 缓存代际矩阵 | done | §2，7 项；watch 双向探针实证 |
+| 池与租借清单（三条路径） | done | §3，8 个池 |
+| 取消可见性表 | done | §4 |
+| 单线程对照与重复跑 | done | §5；4 夹具全等，LSP 3/3 |
+| 非确定性探测（10 次） | done | §5 |
+| 只读边界 | done | 无产品代码改动；驱动脚本在 `.ai/scratch/concurrency/` |
+
+### 8. 口径与局限
+
+- 并发缺陷的检测力有限：单线程对照、重复跑与 LSP 压力能否证伪「存在竞争」，只证明「当前夹具与请求组合下不可观测」。未使用线程检查器（TSan 类）或注入式调度。
+- LSP 压力覆盖语言服务与诊断路径，未覆盖 API 的 `--api -async` 快照并发（需要构造快照/文件句柄序列，成本较高，本轮未做）。
+- 单文件内超大循环的取消粒度未验证（§4 残余项）。
+- `NativeProfile` 停止期并发采样与 `MapperProcess` 子进程异常退出的 pending 处理未验证（§1 残余项）。
+
+### 9. 下轮候选（按证据强度 × 影响面）
+
+1. **架构与契约（3.6/3.5）**——第 1 轮 F-001-11 记 `Storage` 与 `Experiments` 在 safety 套件下 0 覆盖，先判定死代码还是未测代码；同时把「门禁盲区」族（F-001-02/04、F-003-01）一次收口。
+2. **修复轮（模式 C）**——F-003-01 是纯测试设施改动（补两个双参数旗标的枚举），量级约一小时，可与门禁补测同批做。
+3. **并发深化**——`--api -async` 快照并发与线程检查器（若可得）是唯一能把本轮「未观测到」推进到「排除」的手段。
+
+### 10. 一句话结论
+
+并发与资源生命周期面未发现正确性缺陷：单线程对照四个夹具逐字节一致、并发 10 次重跑全等（含 41 万字节诊断顺序）、LSP 20 并发请求 3/3 干净、watch 双向代际正确、取消路径无挂死无残留；本轮发现集中在门禁自身（两个参数化旗标从未被套件枚举）与一处已定界的理论风险。
