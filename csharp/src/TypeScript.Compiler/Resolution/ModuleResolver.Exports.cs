@@ -201,7 +201,7 @@ public sealed partial class ModuleResolver
                 foreach (Utf8String candidate in candidates)
                 {
                     Utf8String file = input[..^extension.Length] + candidate;
-                    if ((extensions & ExtensionKind(candidate)) != 0 && fs.FileExists(file)
+                    if ((extensions & ExtensionKind(candidate)) != 0 && resolver.FileExists(file)
                         && PackageFile(extensions, file, Utf8String.Empty) is { } result)
                         return result;
                 }

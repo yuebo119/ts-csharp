@@ -96,7 +96,7 @@ public sealed partial class ModuleResolver
                 cancellation.ThrowIfCancellationRequested();
                 Utf8String path = candidate[..^ext.Length] + suffix + ext;
                 locations.Add(path);
-                bool exists = fs.FileExists(path);
+                bool exists = resolver.FileExists(path);
                 Trace(Utf8Literals.File, path, exists ? Utf8Literals.Exists : Utf8Literals.Missing);
                 Message(exists ? Messages.File_0_exists_use_it_as_a_name_resolution_result : Messages.File_0_does_not_exist, path);
                 if (exists)
