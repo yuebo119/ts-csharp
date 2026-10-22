@@ -34,7 +34,7 @@
 | 巨文件 | ≤ x1.55 | x1.369（r38 表 AB150；r34 x1.393 / r32 x1.368） | 同上 |
 | 启动类负载（version/help/empty-project） | ≤ x1.35 | x1.148~x1.214（r38 表 AB150；r34 x1.22~1.24 / r32 x1.18~1.27） | 同上 |
 | 产物等价 | 逐字节 100%（25 夹具） | 25/25（r27d/r28）；r38 复跑 6 夹具三方全等 + AB 逐对断言（25 夹具 full gate 未复跑） | 退出码 + stdout + 发射文件哈希 |
-| safety 套件 | ≥ 90/95 且失败集合 ⊆ 已知基线集合 | 91/93（失败 = program-emit / checker-relation-context，均在基线内；旗标枚举数 95→93） | docs 轮次报告口径 |
+| safety 套件 | ≥ 90/94 且失败集合 ⊆ 已知基线集合 | 91/94（失败 = program-emit / checker-relation-context / npm-process，均在基线内；旗标枚举数 93→94，新增 `--hostile-input-safety`） | docs 轮次报告口径 |
 | 构建红线 | Release 0 警告 0 错误（含 analyzer 段与 AOT 验证） | 0/0（r28；r38 复跑 0/0） | `csharp/` 下 `dotnet build TypeScript.slnx -c Release` |
 
 已知例外（不算回潮）：tiny-files-noemit 对自身基准 −12.8%（r18 DATAS 关闭的既有代价，换重负载 14~31% 的已接受取舍；r32 表 AB128 CI [1.05, 1.09]）。
