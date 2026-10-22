@@ -78,6 +78,15 @@
 - **每次测量前必须删掉当次 outDir 的兄弟状态文件**（或直接用项目内 outDir + 删夹具根状态文件）；用 `--incremental false` 也可完全避开。
 - 另注意 `--extendedDiagnostics` 统计里的 `GC.GetTotalMemory(forceFullCollection: true)` 会强制一次全量 GC，使"GC pause time"读数从自然值（全量态实测 81.5 ms）抬到 0.22~0.24 s；比较停顿必须不带该旗标。
 
+### 7.1b `Total time` 含统计设施开销（r56 实测，2026-10-22）
+
+`--extendedDiagnostics` 打印的 `Total time` **不是纯编译时间**：统计设施自身在计时窗口内做了两件昂贵的事——对全部源文件语法树的一次标识符遍历，以及 `GC.GetTotalMemory(forceFullCollection: true)` 的强制全量 GC（`Diagnostics/CompilationCapture.cs` 的 `Statistics()`；`started` 在 Capture 构造时取，`TotalTime` 用它算）。
+
+- 实测（真实工程 291 文件，full 模式，3 次）：不带该旗标墙钟 959 / 1031 / 1155 ms，带该旗标 1344 / 1278 / 1332 ms，差值约 **350 ms**。同期 `Total time` 读数为 1.12~1.19 s，即 **Total 的 28%~31% 是统计设施**。
+- **占比类结论必须换算**：`phase:x / Total` 会系统性低估该相位份额（例：emit 0.21s 对 Total 1.12s 读 19%，对纯编译 Total 约 0.77~0.85s 应为 25%~27%）。
+- **不受影响**：同一口径下的比值、相位之间的比例、相位自身的墙钟。已发布的优化裁决（相对比值或相位级判据）无需重判。
+- 需要纯编译墙钟时：用外部计时（不含该旗标运行），或按本条减掉约 350ms 的统计开销后标注为估算。
+
 
 ## 8. 一次标准测量的命令模板
 
