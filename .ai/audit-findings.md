@@ -662,3 +662,263 @@ watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块�
 ### 10. 一句话结论
 
 并发与资源生命周期面未发现正确性缺陷：单线程对照四个夹具逐字节一致、并发 10 次重跑全等（含 41 万字节诊断顺序）、LSP 20 并发请求 3/3 干净、watch 双向代际正确、取消路径无挂死无残留；本轮发现集中在门禁自身（两个参数化旗标从未被套件枚举）与一处已定界的理论风险。
+
+---
+
+## 第 4 轮：架构与契约（2026-10-22）
+
+模式 A 只读审计；门禁盲区家族的两项（errdense 入门禁、断言下限）在本轮内按模式 C 落地。
+
+### 三句话定位
+
+本轮目标面是架构与契约（依赖方向、公开面、重复实现、巨类、死代码、可测性、配置面），外加第 1 轮遗留的门禁盲区家族；该面在性能三表里无记录，只有 r35 的 API 边界包装教训与本轮前三次审计的门禁发现；本轮模式 A，除门禁工具本身外产品代码零改动。
+
+### 0. 基线与状态
+
+| 项 | 实测 |
+| --- | --- |
+| 规模 | 701 个 .cs / 181,576 行（23 个一级目录） |
+| 构建与产品门禁 | 沿用 `86b5a9b`：0/0、safety 96 旗标 93 通过、逐字节门禁（本轮扩到 7 夹具）全等 |
+| 门禁工具改动 | `perf-verify.mjs`、`run-safety-suite.mjs`、新增 `safety-floors.json`（提交 868d230） |
+
+### 1. 依赖方向
+
+完整边表（`using` 计数）在 `.ai/scratch/architecture/deps.txt`。主层示意图（只画主要边，环用双向箭头标出）：
+
+```mermaid
+flowchart TB
+  Text --> Ast
+  Text --> Syntax
+  Text --> Diagnostics
+  Ast <--> Syntax
+  Ast --> Binding
+  Syntax --> Binding
+  Binding --> Checking
+  Syntax --> Checking
+  Semantics --> Checking
+  Checking <--> Emission
+  Checking --> Programs
+  Emission --> Programs
+  Programs --> Incremental
+  Projects --> Programs
+  LanguageServices --> Checking
+  LanguageServices --> Projects
+  Checking <--> LanguageServices
+  Projects <--> LanguageServices
+  LanguageServer --> LanguageServices
+  Api --> LanguageServices
+  Execution --> Programs
+  Diagnostics <--> Checking
+```
+
+| 环 | 证据 | 判定 |
+| --- | --- | --- |
+| Checking ↔ LanguageServices | Checking→LS 8 个文件（`Checker.ClassifiedDisplay/Definitions/References/OrganizeImports/ReferenceSearch*/SignatureHelp`，多为 `using R = ...ReferenceNavigation` 与 LS 辅助类型）；LS→Checking 48 | 结构环；查证器承载了部分 LS 查询实现，未发现行为缺陷 |
+| Checking ↔ Emission | Checking→Emission 7 个文件（hover/signature/declaration 打印与 `EmitContext`）；Emission→Checking 24 | 结构环；查证器打印类型语法、发射器复用查证器，均为参考实现的整合形态 |
+| Projects ↔ LanguageServices | Projects→LS 7（`ProjectSession`、`ProjectDiagnostics`、`OverlayFileSystem`、`FileChange`、`DocumentSnapshot`、`ProjectSnapshotHost` 等）；LS→Projects 18 | 结构环；快照诊断与查询互调 |
+| Diagnostics ↔ Checking | Diagnostics→Checking 3（`CompilationTrace`、`CompilationTrace.Types`、`CompilationCapture` 的统计）；Checking→Diagnostics 121 | 结构环；仅统计设施 |
+| Ast ↔ Syntax | Ast→Syntax 4、Syntax→Ast 15 | 设计使然（节点类型依赖 `SyntaxKind`） |
+
+底层反向依赖未发现：`Text` 与 `Storage` 都不引用语义层；`Storage` 只被 `Syntax/Slice*` 引用；`Semantics` 只依赖 `Text`。其余高计数边（Checking→Binding/Ast/Syntax/Text、LanguageServices→Ast/Syntax/Checking、Emission→Ast/Syntax）方向合法。
+
+### 2. 公开面
+
+反射探针（临时 net11 程序，读取 `TypeScript.Compiler.dll` 的导出类型）：
+
+| 指标 | 数值 |
+| --- | --- |
+| 导出类型 | 630 |
+| 公开成员签名里出现非公开类型 | **0** |
+| 仅编译器程序集内部引用 | 153 |
+| 仅 Compatibility 测试引用（测试有 `InternalsVisibleTo`，public 不必要） | 464 |
+| 被 CommandLine 或其他 src 工程引用（public 真正被跨程序集需要） | **11** |
+
+跨程序集真正需要的 11 个类型：`ApiServer`、`ApiServerOptions`、`NativeProfile`（含 `Scope`）、`CompilerCommand`、`LibraryFileSystem`、`PhysicalFileSystem`、`BuildInfo`、`LanguageServer`、`ProcessNpmExecutor`、`Utf8String`。
+
+API 边界包装保持 r35 结论：`module-program-specifiers-safety` 钉死的 `Array.AsReadOnly` 语义未改动；内部存储去包装仍属正确做法。
+
+判定：无内部类型泄漏；但公开面是跨程序集实际需要的约 57 倍。不主张批量 internal 化（600+ 类型的改动面与零行为收益），建议在架构测试里钉一条策略（例如「新增 public 必须被 CLI 引用或列入白名单」）。
+
+### 3. 重复实现
+
+| 语义 | 实现处 | 是否分叉 |
+| --- | --- | --- |
+| 扩展名 | `CompilerPath.Extension`（最后一个点）与 `ModuleResolver.Extension`（优先已知多点扩展名） | 是，但属设计：`a.d.ts` 分别得 `.ts` 与 `.d.ts`；同名不同义，记维护风险 |
+| 路径规范化 | `CompilerPath.Normalize/Resolve/Relative` 与 `IFileSystem.RealPath`（平台真实路径） | 否，职责不同 |
+| UTF-8/WTF-8 解码 | `Wtf8.Decode/DecodeString` 单一解码器；`SourceEncoding` 只处理 BOM 与 UTF-16 转码后交给 WTF-8 | 否 |
+| UTF-16 列计数 | `DocumentCoordinates.Decode`、`DeclarationMaps.Offset`、`CompilationTrace.Position` | **是**：前三者对非法字节按 1 字节 1 单元，`CompilationTrace` 用 `Wtf8.Decode`，孤立代理 `ED A0 80` 计 1 单元而另两处计 3 |
+| 诊断排序去重 | `DiagnosticCollection.SortAndDeduplicate` 集中调用（Api/Checker/Execution/Incremental） | 否 |
+| AST 遍历骨架 | `Binder.Visit`、`Checker.CheckSourceElement`、`SyntaxRewriter`、`SliceParser` | 不适用（遍历语义不同） |
+
+UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元数据），不影响发射产物；但它是同一语义的三份实现，建议统一到 `DocumentCoordinates` 的 helper 并加一个孤立代理的断言。
+
+### 4. 巨型类（>1000 行）
+
+| 文件 | 行数 | 性质与切分建议 | 触碰关系链 |
+| --- | --- | --- | --- |
+| `Ast/Nodes.generated.cs` | 8,992 | 生成文件，不切 | 否 |
+| `Semantics/GoUnicode.generated.cs` | 4,495 | 生成文件，不切 | 否 |
+| `Diagnostics/Messages.generated.cs` | 4,435 | 生成文件，不切 | 否 |
+| `Semantics/GoUnicode.Normalization.generated.cs` | 3,775 | 生成文件，不切 | 否 |
+| `Semantics/JsCase.generated.cs` | 3,472 | 生成文件，不切 | 否 |
+| `Semantics/GoRegex.Properties.generated.cs` | 2,800 | 生成文件，不切 | 否 |
+| `Emission/SyntaxRewriter.generated.cs` | 2,361 | 生成文件，不切 | 否 |
+| `Protocol/AstWireSchema.generated.cs` | 2,233 | 生成文件，不切 | 否 |
+| `Diagnostics/DiagnosticCode.generated.cs` | 2,223 | 生成文件，不切 | 否 |
+| `Syntax/Parser.Statements.cs` | 1,358 | 按语句族拆三个 partial（声明/控制流/模块） | 否 |
+| `Emission/SyntaxPrinter.Nodes.cs` | 1,344 | 按节点族拆 partial；打印顺序状态需保持 | 否 |
+| `Checking/Checker.SymbolNodePrinter.cs` | 1,305 | 按类型种类拆 partial | 否（但影响打印文本） |
+| `Checking/Checker.TypeSyntax.cs` | 1,267 | 按类型种类拆 partial | 否（但影响打印文本） |
+
+切分均为文件搬移，无逻辑改写；验证载体是逐字节门禁（7 夹具）与 safety 套件。优先级低：巨类集中在生成文件与既有 partial 家族，除 `Parser.Statements` 外没有明显的职责混杂。
+
+### 5. 死代码：Storage / Experiments 判定
+
+| 目录 | 行数 | 引用 | 判定 |
+| --- | --- | --- | --- |
+| `Storage/`（`Arena.cs`、`NodeStores.cs`） | 140 | 被 `Syntax/Slice*`、`Experiments/*` 使用 | **非死代码**，但只在实验岛内 |
+| `Experiments/`（`SliceProject`、`SliceWorkspace`、`TypeRelations`） | 710 | 仅 Compatibility 测试（`PipelineExperiments`、`ProfileExperiments`） | 测试/基准专用 |
+| `Syntax/Slice*.cs` | 1,177 | 被 `Experiments` 与 `Protocol/SliceEncoder` 使用 | 实验岛本体 |
+| `Protocol/SliceEncoder.cs` | 230 | 仅 Compatibility 测试（`--pipeline`、`--pipeline-benchmark`、`--profile-pipeline`） | 测试专用 |
+
+结论：Slice/Experiments/Storage 合计约 2,257 行，是**测试与基准专用的实验岛**，不在产品路径上（CLI/API/LSP 均无引用）。不是死代码（测试可达），但也没有产品消费者；第 1 轮的「0 覆盖」不是遗漏，是它确实不进 safety 路径。建议加一份实验岛 README 标注状态，或整体迁到测试工程（搬移量大，收益是编译器程序集减约 2.3k 行）。
+
+零引用导出类型（生成）：`Checking.Flags.generated.cs` 的 `SignatureKind`（:230）与 `MinArgumentCountFlags`（:529）。除声明外全仓无引用；生成器产物，删除需与生成脚本同步。
+
+### 6. 可测性障碍
+
+| 站点 | 数量 | 判定 |
+| --- | --- | --- |
+| `Hosts/FileSystem.cs`（Physical/Memory 实现） | 5 File + 9 Directory | 抽象层本体，预期 |
+| `Watching/NativeWatchBackend.cs` | 5 Directory | 平台 watcher 后端 |
+| `Diagnostics/NativeProfile.cs` | 2 File + 3 Directory + `UtcNow` | 采样器，天然依赖真实时钟/文件 |
+| `Diagnostics/OnDemandProfiler.cs` | 2 File + 1 Directory + `UtcNow` | 诊断输出 |
+| `Protocol/RpcPipeListener.cs` | 1 File | 命名管道 |
+| `Projects/TypeAcquisition/ProcessNpmExecutor.cs` | 1 File | 外部进程 |
+| `Execution/CompilerCommand.cs` | `DateTime.Now` 默认值 | 已可注入 `now` |
+| `Execution/ProjectBuilder.cs` | `DateTime.UtcNow` 默认值 | 已可经 `TimeProvider` 注入 |
+| `Hosts/FileSystem.cs:325` | 内存 FS 的 `UtcNow` mtime | 测试设施 |
+| `LanguageServer/LanguageServerSession.Api.cs` | `Guid.NewGuid` | 管道名 |
+| `Protocol/RpcConnection.cs` | `DateTimeOffset.UtcNow` | 计时统计 |
+
+产品核心（Text/Syntax/Ast/Binding/Checking/Semantics/Emission）没有直接的 `DateTime`/`File`/`Directory`/`Random` 调用；障碍集中在宿主与诊断层，且多数已有注入点。不构成确定性测试的硬阻塞。
+
+### 7. 配置面
+
+| 旋钮 | 默认 | 文档 | 测试 | 备注 |
+| --- | --- | --- | --- | --- |
+| `TSHARP_PARSE_CONCURRENCY` | 4 | ledger r32/r33、method.md | 无专门测试 | r33 配对确认默认 4 |
+| `TSHARP_EMIT_CONCURRENCY` | 未设 → `pool.Count`；`1` 强制串行 | r54 注释/ledger | 无 | A/B 旋钮 |
+| `TSHARP_EMIT_ORDER` | owner 派发；`queue` 回退 | r53/r54 | 无 | r54 发布依据 |
+| `TSHARP_EMIT_SEGMENTS` | `clamp(核数/8, 2, 8)`；`0` 关闭分段；N 上限 64 | r35 W7 | 无 | 打印分段 |
+| `TSHARP_STARTUP_TRACE` | 未设 = 关 | r30/method | 无 | 启动计时 |
+
+产品源码里只有这 5 个 `TSHARP_*`（此前的探针旋钮都已回退，未残留）。无已废弃未删项；默认值与 ledger 记录一致。缺的是旋钮的自动化测试（都属测量 A/B 用，可接受）。
+
+### 8. 门禁盲区家族收口（模式 C，提交 868d230）
+
+| 项 | 状态 | 证据 |
+| --- | --- | --- |
+| F-003-01 参数化旗标未枚举 | 已修（第 3 轮，055d01c） | 套件 94→96 旗标 |
+| F-001-01/F-001-02 诊断面与夹具覆盖 | **部分收口** | `perf-verify` 夹具 6→7，新增 errdense：5000 行诊断进入 stdout 哈希；新基线 `audit-r04-gate`，复验 `BYTECHECK-OK`（7 夹具、195+2+0+2+0+2+0 产物与 errdense stdout 全等） |
+| F-001-04 断言数无下限 | **收口** | `safety-floors.json` 记录 58 个旗标的断言下限；套件低于下限即门禁红。变异验证：`--rpc-safety` 下限 186→187 时输出 `ASSERTION FLOOR` 并 exit 1；恢复后 93/96 `SUITE-OK` |
+| F-001-03 两个永久红旗标提前中止 | 仍开放 | `--program-emit-safety` 14/20、`--checker-relation-context-safety` 3/33 中止，未在基线外但断言覆盖残缺 |
+
+仍缺的门禁面：`editbig` 的增量三轮没有进 `perf-verify`（单次构建驱动无法表达编辑轮）；两个 noEmit 夹具只比较退出码（产物为 0）；`inc512`、`errdense-clean` 不在逐字节清单。注意：夹具从 6 增到 7 后，旧的 `audit-r02-*` 基线缺少 errdense 条目，后续 `--compare` 应使用 `audit-r04-gate` 或更新标签。
+
+### 9. 发现卡片
+
+**F-004-01 四条跨层依赖环（结构债，无行为缺陷证据）**
+
+维度：3.6　位置：`Checking/Checker.{ClassifiedDisplay,Definitions,References,OrganizeImports,ReferenceSearch*,SignatureHelp}.cs`、`Checking/Checker.{AnnotationFixes,EmitNodes,HoverDeclarations,SignatureSyntax,TypeSyntax}.cs`、`Projects/{ProjectSession,ProjectDiagnostics,OverlayFileSystem,FileChange,DocumentSnapshot,ProjectSnapshotHost}.cs`、`Diagnostics/Compilation{Trace,Capture}.cs`
+现象：`using` 计数显示 Checking↔LanguageServices、Checking↔Emission、Projects↔LanguageServices、Diagnostics↔Checking 四个双向边族。
+触发：不适用（静态结构）。
+复现：`.ai/scratch/architecture/deps.mjs`，输出在 `deps.txt`。
+影响：可维护性（改动传播面大）。
+量级：Checking→LS 8 文件、Checking→Emission 7 文件、Projects→LS 7 文件、Diagnostics→Checking 3 文件。
+置信度：[事实]（边与文件）；无行为缺陷 [推断]（未做环上改动实验）。
+建议：只记录。若要收敛，先拆 Diagnostics→Checking（统计设施依赖最低），再评估 Projects↔LS；Checking↔Emission 是参考实现的整合形态，动它需要单独立项。
+
+**F-004-02 公开面约为跨程序集需要的 57 倍（无泄漏）**
+
+维度：3.6　位置：全程序集导出面
+现象：630 个导出类型；公开成员签名里非公开类型 0；仅 11 个类型被 CommandLine/其他 src 跨程序集引用；153 个无编译器外引用，464 个仅测试引用（测试有 `InternalsVisibleTo`）。
+触发：不适用。
+复现：`.ai/scratch/architecture/surface`（反射探针）与 `surface-refs.mjs`。
+影响：可维护性（API 表面承诺过宽）；无功能风险。
+量级：630 / 11。
+置信度：[事实]
+建议：只记录。不建议批量 internal 化；可在架构测试里钉「新增 public 需跨程序集引用或白名单」。
+
+**F-004-03 UTF-16 列计数三份实现，孤立代理下分叉**
+
+维度：3.6 / 3.5　位置：`LanguageServices/DocumentCoordinates.cs:82-90`、`LanguageServices/DeclarationMaps.cs:150-160`、`Diagnostics/CompilationTrace.Types.cs:110-118`
+现象：前两处对非法 UTF-8 每字节计 1 个 UTF-16 单元；`CompilationTrace` 用 `Wtf8.Decode`，孤立代理 `ED A0 80` 计 1 个单元。三处对同一文件同一偏移给出不同列号（3 对 1）。
+触发：源码含孤立代理 + `--generateTrace` 与 LSP 位置同时使用。
+复现：读码；未做动态对拍。
+影响：诊断/追踪元数据不一致（不影响发射产物）。
+量级：仅孤立代理路径。
+置信度：[事实]（代码路径）；分叉的动态表现 [推断]
+建议：测 → 修。统一到一个 helper，并加孤立代理的位置断言（LSP 与 trace 各一条）。
+
+**F-004-04 Slice/Experiments/Storage 是测试专用实验岛（约 2,257 行）**
+
+维度：3.6　位置：`Storage/`（140）、`Experiments/`（710）、`Syntax/Slice*.cs`（1,177）、`Protocol/SliceEncoder.cs`（230）
+现象：产品路径（CLI/API/LSP）无引用；唯一消费者是 Compatibility 的 `--pipeline`、`--pipeline-benchmark`、`--profile-pipeline`。
+影响：可维护性（编译器程序集多 2.3k 行，safety 0 覆盖但它们也不该被 safety 覆盖）。
+置信度：[事实]
+建议：只记录。加实验岛 README 标注状态；或整体迁到测试工程。
+
+**F-004-05 两个零引用生成枚举**
+
+维度：3.6　位置：`Checking/Flags.generated.cs:230`（`SignatureKind`）、`:529`（`MinArgumentCountFlags`）
+现象：除声明外全仓无引用。
+影响：可维护性（生成器产物）。
+置信度：[事实]（simple-name 扫描；已排除同名冲突）
+建议：只记录；删除需与生成脚本同步。
+
+**F-004-06 门禁盲区两项收口（closed，提交 868d230）**
+
+维度：3.9　位置：`csharp/tools/perf-verify.mjs`、`csharp/tools/run-safety-suite.mjs`、`csharp/tools/safety-floors.json`
+现象与证据：见 §8。errdense 逐字节复验 `BYTECHECK-OK`；断言下限变异验证 exit 1，恢复后 `SUITE-OK`。
+置信度：[事实]
+建议：已完成。剩余缺口见 F-004-07。
+
+**F-004-07 门禁剩余缺口：editbig 增量轮、noEmit 产物面、两个提前中止的旗标**
+
+维度：3.9　位置：`csharp/tools/perf-verify.mjs:24`（specs）、`csharp/tests/TypeScript.Compatibility/ProgramEmissionTests.Safety.cs:83`、`CheckerProgramTests.cs:162`
+现象：`editbig` 的增量三轮没有进逐字节门禁；`tiny512`、`small3` 只比较退出码；`--program-emit-safety` 与 `--checker-relation-context-safety` 提前中止。
+影响：门禁盲区（增量编辑轮与两个断言族）。
+置信度：[事实]
+建议：测。editbig 需要多轮驱动（约 40 行脚本）；两个红旗标先定位 `Single` 无匹配的测试缺陷。
+
+### 10. 计划对照
+
+| 专项要求 | 状态 | 说明 |
+| --- | --- | --- |
+| 依赖图 + 违规边 | done | §1；4 条环，底层无反向依赖 |
+| 公开面三类问题 | done | §2；泄漏 0，宽度 630/11，包装契约未变 |
+| 重复实现对照 | done | §3；UTF-16 一处真分叉，扩展名同名不同义 |
+| 巨类清单 | done | §4；4 个手写文件 >1000 行 |
+| 死代码（Storage/Experiments） | done | §5；测试专用实验岛，非产品路径 |
+| 可测性障碍 | done | §6；核心零环境依赖 |
+| 配置面核对 | done | §7；5 个旋钮，默认与文档一致 |
+| 门禁盲区家族 | done | §8；两项收口，两项剩余 |
+
+### 11. 口径与局限
+
+- 依赖图基于 `using` 指令，不含全限定名引用与 global using，边计数是下界；环的判定逐个读文件复核过，不受此影响。
+- 公开面引用计数用简单名匹配：常见名（`Type`、`Symbol`、`Node`）会低估候选数，不会高估；结论「仅 11 个跨程序集必需」经人工核对列表。
+- 死代码只覆盖实验岛与两个零引用枚举，没有跑全仓未使用符号扫描（`.slnx` 上的 roslyn 工具支持未验证）；其余零引用项可能仍藏在未审计目录。
+- 重复实现只核对了题面列出的五个候选方向，不是穷举。
+- UTF-16 分叉是读码结论，未构造孤立代理动态对拍。
+
+### 12. 下轮候选（按证据强度 × 影响面）
+
+1. **修复轮（模式 C）**——F-004-03 统一 UTF-16 列计数并加孤立代理断言；改动 3 个文件量级，不碰关系链，门禁用逐字节 + LSP/追踪断言验证。
+2. **门禁补全**——F-004-07 的 editbig 增量门禁（约 40 行驱动）与两个提前中止旗标的测试修复；纯测试设施。
+3. **架构策略**——F-004-01/02 的收敛需要用户先定策略（依赖方向门禁是否引入、public 面是否收窄）；在任何收敛前只记录。
+
+### 13. 一句话结论
+
+架构面没有行为缺陷：底层无反向依赖、公开面零泄漏、核心零环境依赖、配置面与文档一致；问题集中在四条跨层环（可维护性）、公开面过宽（630 对 11）、一处 UTF-16 分叉（仅追踪元数据）与测试专用实验岛（2.3k 行）；门禁盲区家族本轮收口两项（errdense 入门禁、断言下限），剩余 editbig 增量轮与两个提前中止旗标。
