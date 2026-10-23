@@ -154,8 +154,8 @@ internal sealed class DeclarationMaps(CompilerProgram program, CancellationToken
         int units = 0;
         while (offset < end && units < column)
         {
-            if (Rune.DecodeFromUtf8(text.Text.Span[offset..], out var rune, out int width) != OperationStatus.Done) { width = 1; rune = Rune.ReplacementChar; }
-            units += rune.Utf16SequenceLength; offset += width;
+            offset += Utf16Positions.Next(text.Text.Span[offset..end], out int runeUnits);
+            units += runeUnits;
         }
         return offset;
     }

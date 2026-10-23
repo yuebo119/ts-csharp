@@ -108,9 +108,7 @@ internal sealed partial class CompilationTrace
         void Position(ReadOnlySpan<byte> name, int offset)
         {
             var (line, _) = file.Source.GetLineAndCharacter(offset);
-            int units = 0, cursor = file.Source.LineStarts[line];
-            while (cursor < offset)
-            { int point = Wtf8.Decode(file.Source.Text.Span[cursor..offset], out int width); units += point >= 0x10000 ? 2 : 1; cursor += width; }
+            int units = Utf16Positions.Units(file.Source.Text.Span[file.Source.LineStarts[line]..offset]);
             writer.WriteStartObject(name); writer.WriteNumber("line"u8, line + 1); writer.WriteNumber("character"u8, units + 1); writer.WriteEndObject();
         }
     }

@@ -5,6 +5,7 @@ using TypeScript.Compiler.Configuration;
 using TypeScript.Compiler.Diagnostics;
 using TypeScript.Compiler.Execution;
 using TypeScript.Compiler.Hosts;
+using TypeScript.Compiler.LanguageServices;
 using TypeScript.Compiler.Programs;
 
 namespace TypeScript.Compatibility;
@@ -94,6 +95,37 @@ internal static class TracingTests
             ValidateTrace(parallel[index], Utf8String.FromString($"/parallel{index}"), Check);
             Check(!parallel[index].FileExists(Utf8String.FromString($"/parallel{1 - index}/legend.json")), "Concurrent captures do not share output paths");
         }
+
+        // F-004-03: a WTF-8 lone surrogate is three invalid UTF-8 bytes. LSP coordinates,
+        // declaration maps and traces share one accounting rule: one replacement unit per
+        // invalid byte. Before the unification the trace counted the surrogate as one scalar.
+        var surrogateSource = Wtf8.Encode("const s = \"\uD800\"; type T = Array<number>;\n");
+        int arrayOffset = Array.IndexOf(surrogateSource, (byte)'A');
+        Check(Utf16Positions.Units(surrogateSource.AsSpan(0, arrayOffset)) == 26, "Lone surrogate counts three units before Array");
+        Check(new DocumentLineMap(new Utf8String(surrogateSource)).ToPosition(arrayOffset, PositionEncoding.Utf16)
+            == new DocumentPosition(0, 26), "LSP position uses per-byte replacement accounting");
+        var surrogateFs = new MemoryFileSystem(new Dictionary<Utf8String, byte[]>
+        {
+            ["/s/tsconfig.json"u8] = "{\"compilerOptions\":{\"strict\":true,\"skipLibCheck\":true,\"noEmit\":true},\"files\":[\"source.ts\"]}"u8.ToArray(),
+            ["/s/source.ts"u8] = surrogateSource,
+        }, true, "/s"u8);
+        using (var surrogateOutput = new StringWriter())
+        {
+            await using var command = new CompilerCommand(new LibraryFileSystem(surrogateFs), "/s"u8, surrogateOutput);
+            Check(await command.ExecuteAsync(["--generateTrace"u8, "/surrogate"u8]) == CompilerExitStatus.Success,
+                "A source with a lone surrogate traces successfully");
+        }
+        var surrogateLegend = Read(surrogateFs, "/surrogate/legend.json"u8);
+        var locations = surrogateLegend
+            .SelectMany(entry => Read(surrogateFs, JsonStrings.GetString(entry.GetProperty("typesPath"))))
+            .Where(type => type.TryGetProperty("referenceLocation"u8, out var location)
+                && location.GetProperty("path"u8).GetString()!.EndsWith("/source.ts", StringComparison.Ordinal))
+            .Select(type => type.GetProperty("referenceLocation"u8))
+            .ToArray();
+        Check(locations.Length != 0, "The Array reference has a trace location");
+        Check(locations.All(location => location.GetProperty("start"u8).GetProperty("line"u8).GetInt32() == 1), "Trace line is one-based");
+        Check(locations.All(location => location.GetProperty("start"u8).GetProperty("character"u8).GetInt32() == 27),
+            "Trace column uses per-byte accounting (26 + 1)");
 
         var control = await CompileWeakAsync(Files(), trace: false);
         var retained = await CompileWeakAsync(Files(), trace: true);

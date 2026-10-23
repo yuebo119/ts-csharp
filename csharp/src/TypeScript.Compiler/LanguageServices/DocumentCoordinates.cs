@@ -78,14 +78,5 @@ public sealed class DocumentLineMap
         new(ToPosition(start, encoding), ToPosition(end, encoding));
 
     // LSP's reference converter uses Unicode UTF-8 decoding: each invalid byte is one replacement.
-    private static int Decode(ReadOnlySpan<byte> bytes, out int units)
-    {
-        if (Rune.DecodeFromUtf8(bytes, out Rune rune, out int width) == OperationStatus.Done)
-        {
-            units = rune.Utf16SequenceLength;
-            return width;
-        }
-        units = 1;
-        return 1;
-    }
+    private static int Decode(ReadOnlySpan<byte> bytes, out int units) => Utf16Positions.Next(bytes, out units);
 }

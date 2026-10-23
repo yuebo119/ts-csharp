@@ -51,7 +51,7 @@
   "--checker-indexing-safety": 51,
   "--checker-relation-diagnostics-safety": 10,
   "--program-safety": 28,
-  "--tracing-safety": 10968,
+  "--tracing-safety": 10974,
   "--lsp-watch-safety": 71,
   "--telemetry-safety": 28,
   "--lsp-safety": 283,
