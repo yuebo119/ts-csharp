@@ -598,6 +598,8 @@
 
 LSP 并发压力（`.ai/scratch/concurrency/lsp-stress.mjs`）：初始化 + 20 个并发请求（diagnostic/hover/completion/definition 各 5）+ 编辑后 5 个请求 + `$/cancelRequest` + shutdown/exit，3/3 全过：29 个响应、0 错误、hover 返回真实内容、退出码 0。
 
+API async 并发压力（`.ai/scratch/concurrency/api-async-stress.mjs`，2026-10-22 补测）：`--api -async` 下创建快照、30 轮并发查询（semantic/syntactic/sourceFile/sourceFileNames 各 30）、`updateSnapshot` 与 10 个在途查询竞态、更新后 10 次复查、释放并 EOF 退出；3/3 全过：144 响应、0 错误、退出码 0。
+
 watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块出现清除 TS2307、模块消失恢复 TS2307、`node_modules` 包出现后被新代际解析，全部通过。
 
 并发相关 safety 旗标各跑 3 次：`--incremental-safety` 3/3、`--lsp-safety` 3/3、`--syntax-services-safety` 3/3、`--rpc-safety` 3/3。门禁修复后（提交 055d01c）套件枚举 96 旗标、93 通过、失败集合仍是三项基线，此前从未运行的两个双参数旗标各以 4 与 51 断言通过。
@@ -649,7 +651,7 @@ watch 代际探针（`.ai/scratch/concurrency/watch-generation.mjs`）：模块�
 ### 8. 口径与局限
 
 - 并发缺陷的检测力有限：单线程对照、重复跑与 LSP 压力能否证伪「存在竞争」，只证明「当前夹具与请求组合下不可观测」。未使用线程检查器（TSan 类）或注入式调度。
-- LSP 压力覆盖语言服务与诊断路径，未覆盖 API 的 `--api -async` 快照并发（需要构造快照/文件句柄序列，成本较高，本轮未做）。
+- API 的 `--api -async` 快照并发已于 2026-10-22 补测（§5）：更新竞态下 3/3 干净；仍只证明「当前组合不可观测」，未用线程检查器。
 - 单文件内超大循环的取消粒度未验证（§4 残余项）。
 - `NativeProfile` 停止期并发采样与 `MapperProcess` 子进程异常退出的 pending 处理未验证（§1 残余项）。
 
