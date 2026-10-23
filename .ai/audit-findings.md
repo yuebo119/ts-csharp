@@ -74,7 +74,7 @@
 
 ### 3. 发现卡片
 
-**F-001-01 逐字节门禁的 stdout 比对在全部 6 个夹具上恒为空串比较**
+**F-001-01 逐字节门禁的 stdout 比对在全部 6 个夹具上恒为空串比较（closed，提交 868d230）**
 
 维度：3.9　位置：`csharp/tools/perf-verify.mjs:78-95`、`built/csharp/perf-fresh/fixtures/*/tsconfig.json`
 现象：6 个夹具的 `run.log` 全部 0 字节，门禁的 `b.stdout !== r.stdout` 分支只能在夹具从零诊断变成有诊断时触发，对诊断文本、顺序、位置的变化零分辨力。
@@ -85,7 +85,7 @@
 置信度：[事实]
 建议：测。夹具族增加一个错误密集型（`errdense` 已存在），把 5001 行诊断的 stdout 纳入常规门禁。
 
-**F-001-02 逐字节产物面 97% 由单一夹具贡献，两个夹具产物数为 0，四个已存在夹具未入门禁**
+**F-001-02 逐字节产物面 97% 由单一夹具贡献，两个夹具产物数为 0，四个已存在夹具未入门禁（部分 closed：errdense 868d230、editbig eccc446；剩余 noEmit 产物面与 inc512/errdense-clean）**
 
 维度：3.9　位置：`csharp/tools/perf-verify.mjs:24`
 现象：`specs` 只列 6 个夹具，产物分布为 medium 195、huge 2、dtsheavy 2、longline 2、tiny512 0、small3 0。`tiny512` 与 `small3` 的 tsconfig 是 `noEmit: true`，设计上不产生产物。夹具目录下另有 `editbig`、`errdense`、`errdense-clean`、`inc512` 四个夹具不在这份清单里。
@@ -96,7 +96,7 @@
 置信度：[事实]
 建议：测。把 `editbig`（增量三轮）与 `errdense` 纳入常规门禁；对 noEmit 夹具至少比对 `--listFiles` 或诊断输出，避免「0 产物即通过」。
 
-**F-001-03 两个永久红旗标提前中止，其后断言从未执行**
+**F-001-03 两个永久红旗标提前中止，其后断言从未执行（closed，提交 eccc446：program-emit 18 断言、relation-context 14 断言全部执行并通过）**
 
 维度：3.9　位置：`csharp/tests/TypeScript.Compatibility/ProgramEmissionTests.Safety.cs:83`、`CheckerProgramTests.cs:162`
 现象：`--program-emit-safety` 在第 14 条断言失败（该文件共 20 条），其后 7 条不再执行。`--checker-relation-context-safety` 在第 3 条断言求值时 `Single(...)` 找不到元素，抛 `InvalidOperationException`，方法内共 33 条断言，其后 30 条不执行。两者都在 `run-safety-suite.mjs` 的 `baseline` 集合内，因此永久红不影响门禁判定。
@@ -106,7 +106,7 @@
 置信度：[事实]
 建议：修测试。relation-context 的首个缺陷是测试自身的 LINQ 假设，先定位 `Single` 无匹配的原因；program-emit 的断言 14 需要判定是产品缺陷还是测试期望过时。
 
-**F-001-04 断言计数无下限，静默退化不可检测**
+**F-001-04 断言计数无下限，静默退化不可检测（closed，提交 868d230：safety-floors.json 61 项下限，低于即红）**
 
 维度：3.9　位置：`csharp/tests/TypeScript.Compatibility/Program.cs`（各 safety 分派臂）、51 个定义 `Safety()` 的测试文件
 现象：分派臂把返回的断言数打印到 stdout 后直接 `return 0`，没有与期望值比较；`grep` 全仓没有 `checks >=` 或期望断言数的断言。测试内部若因语料为空、循环上界变 0、分支提前返回而少跑断言，旗标仍然通过。
@@ -815,14 +815,14 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 
 产品源码里只有这 5 个 `TSHARP_*`（此前的探针旋钮都已回退，未残留）。无已废弃未删项；默认值与 ledger 记录一致。缺的是旋钮的自动化测试（都属测量 A/B 用，可接受）。
 
-### 8. 门禁盲区家族收口（模式 C，提交 868d230）
+### 8. 门禁盲区家族收口（模式 C，提交 868d230 / eccc446）
 
 | 项 | 状态 | 证据 |
 | --- | --- | --- |
 | F-003-01 参数化旗标未枚举 | 已修（第 3 轮，055d01c） | 套件 94→96 旗标 |
-| F-001-01/F-001-02 诊断面与夹具覆盖 | **部分收口** | `perf-verify` 夹具 6→7，新增 errdense：5000 行诊断进入 stdout 哈希；新基线 `audit-r04-gate`，复验 `BYTECHECK-OK`（7 夹具、195+2+0+2+0+2+0 产物与 errdense stdout 全等） |
-| F-001-04 断言数无下限 | **收口** | `safety-floors.json` 记录 58 个旗标的断言下限；套件低于下限即门禁红。变异验证：`--rpc-safety` 下限 186→187 时输出 `ASSERTION FLOOR` 并 exit 1；恢复后 93/96 `SUITE-OK` |
-| F-001-03 两个永久红旗标提前中止 | 仍开放 | `--program-emit-safety` 14/20、`--checker-relation-context-safety` 3/33 中止，未在基线外但断言覆盖残缺 |
+| F-001-01/F-001-02 诊断面与夹具覆盖 | **收口（诊断面与增量轮）** | errdense 的 5000 行诊断进入 stdout 哈希（868d230）；editbig 全量 + 3 轮确定性编辑、128 产物逐字节（eccc446，`INCREMENTAL-OK`）。剩余：两个 noEmit 夹具只比退出码；`inc512`/`errdense-clean` 未列入 |
+| F-001-04 断言数无下限 | **收口** | `safety-floors.json` 记录 61 个旗标的断言下限；套件低于下限即门禁红。变异验证：`--rpc-safety` 下限 186→187 时输出 `ASSERTION FLOOR` 并 exit 1；恢复后 `SUITE-OK` |
+| F-001-03 两个永久红旗标提前中止 | **已修（eccc446）** | program-emit 18/18、relation-context 14/14 全部执行并通过；根本原因是产品漏报 TS2783（见 F-004-08）与映射器工作目录为虚拟路径 |
 
 仍缺的门禁面：`editbig` 的增量三轮没有进 `perf-verify`（单次构建驱动无法表达编辑轮）；两个 noEmit 夹具只比较退出码（产物为 0）；`inc512`、`errdense-clean` 不在逐字节清单。注意：夹具从 6 增到 7 后，旧的 `audit-r02-*` 基线缺少 errdense 条目，后续 `--compare` 应使用 `audit-r04-gate` 或更新标签。
 
@@ -884,13 +884,25 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 置信度：[事实]
 建议：已完成。剩余缺口见 F-004-07。
 
-**F-004-07 门禁剩余缺口：editbig 增量轮、noEmit 产物面、两个提前中止的旗标**
+**F-004-07 门禁剩余缺口：editbig 增量轮、noEmit 产物面、两个提前中止的旗标（closed 除 noEmit 产物面，提交 eccc446）**
 
-维度：3.9　位置：`csharp/tools/perf-verify.mjs:24`（specs）、`csharp/tests/TypeScript.Compatibility/ProgramEmissionTests.Safety.cs:83`、`CheckerProgramTests.cs:162`
-现象：`editbig` 的增量三轮没有进逐字节门禁；`tiny512`、`small3` 只比较退出码；`--program-emit-safety` 与 `--checker-relation-context-safety` 提前中止。
-影响：门禁盲区（增量编辑轮与两个断言族）。
+维度：3.9　位置：`csharp/tools/perf-verify-incremental.mjs`、`csharp/tools/perf-verify.mjs:24`（specs）、`ProgramEmissionTests.Safety.cs:83`、`CheckerProgramTests.cs:170`
+现象：`editbig` 的增量轮此前没有门禁；`tiny512`、`small3` 只比较退出码；两个红旗标提前中止。
+处置：新增 `perf-verify-incremental`（全量 + 3 轮确定性编辑，128 产物逐字节 + tsbuildinfo 存在性，复验 `INCREMENTAL-OK`）；两个红旗标的根因是产品漏报 TS2783（见 F-004-08）与映射器工作目录为虚拟路径，修复后 18/14 条断言全部执行。
+影响：剩余仅两个 noEmit 夹具的产物面（无产物可哈希，只能比诊断/文件列表）。
 置信度：[事实]
-建议：测。editbig 需要多轮驱动（约 40 行脚本）；两个红旗标先定位 `Single` 无匹配的测试缺陷。
+建议：已完成主体；noEmit 面单独记，不阻塞。
+
+**F-004-08 对象字面量“先写属性后展开”漏报 TS2783（closed，提交 eccc446）**
+
+维度：3.1 / 3.6　位置：`Checking/ObjectLiterals.cs:154-186`（修复前在物化 `all` 之前清空 `ordered`）
+现象：`const part={value:2}; const dupe={value:1,...part};` 本仓不报 `'value' is specified more than once`；参考实现在同源码报 TS2783（列 89），本仓修复后同列。
+触发：对象字面量中属性位于展开之前，且展开类型的同名属性为必填、非 partial。
+复现：临时夹具（noLib + 完整全局桩），本仓与参考二进制同输入对照；修复后两者一致。
+量级：静默漏报一条诊断；`--checker-relation-context-safety` 从 3/14 中止变为 14/14 通过。
+根因：展开分支先在 `ordered` 非空时清空它（并为索引签名重建表），随后才把 `ordered` 物化进 `all`，导致覆盖检查看不到展开前的属性。
+置信度：[事实]（两实现对照 + 代码路径）；第 1 轮 F-001-03 把首个失败归因为测试的 LINQ 假设，本轮纠正为产品漏报，`Single` 无匹配只是暴露形式。
+建议：已修。锁定测试即该 safety 旗标的 spread 断言。
 
 ### 10. 计划对照
 
@@ -903,7 +915,8 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 | 死代码（Storage/Experiments） | done | §5；测试专用实验岛，非产品路径 |
 | 可测性障碍 | done | §6；核心零环境依赖 |
 | 配置面核对 | done | §7；5 个旋钮，默认与文档一致 |
-| 门禁盲区家族 | done | §8；两项收口，两项剩余 |
+| 门禁盲区家族 | done | §8；四项全部收口，仅剩 noEmit 夹具的产物面 |
+| 修复（模式 C，F-001-03/F-004-07/F-004-08） | done | 提交 eccc446；两个红旗标全断言（18/14）、editbig 增量门禁 `INCREMENTAL-OK`、TS2783 与参考同列 |
 | 修复（模式 C，F-004-03） | done | 提交 d2804b0；7 夹具逐字节等 `audit-r04-gate`、safety 93/96、tracing 10,974 断言；S3 反向验证通过 |
 
 ### 11. 口径与局限
@@ -916,9 +929,8 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 
 ### 12. 下轮候选（按证据强度 × 影响面）
 
-1. **门禁补全**——F-004-07 的 editbig 增量门禁（约 40 行驱动）与两个提前中止旗标的测试修复；纯测试设施。
-2. **架构策略**——F-004-01/02 的收敛需要用户先定策略（依赖方向门禁是否引入、public 面是否收窄）；在任何收敛前只记录。
+1. **架构策略**——F-004-01/02 的收敛需要用户先定策略（依赖方向门禁是否引入、public 面是否收窄）；在任何收敛前只记录。
 
 ### 13. 一句话结论
 
-架构面没有行为缺陷：底层无反向依赖、公开面零泄漏、核心零环境依赖、配置面与文档一致；问题集中在四条跨层环（可维护性）、公开面过宽（630 对 11）、一处 UTF-16 分叉（仅追踪元数据）与测试专用实验岛（2.3k 行）；门禁盲区家族本轮收口两项（errdense 入门禁、断言下限），剩余 editbig 增量轮与两个提前中止旗标。
+架构面没有行为缺陷，但门禁补全过程中发现并修复了一个真实的产品漏报（TS2783）：底层无反向依赖、公开面零泄漏、核心零环境依赖、配置面与文档一致；四条跨层环与公开面过宽（630 对 11）留作策略性债务。门禁盲区家族四项全部收口（errdense、断言下限、editbig 增量轮、两个红旗标），套件 96/96（npm-process 环境项偶发失败，基线保留），逐字节 7 夹具 + 增量 4 轮全等。
