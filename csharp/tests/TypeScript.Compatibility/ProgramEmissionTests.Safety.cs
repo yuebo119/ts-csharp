@@ -75,7 +75,8 @@ internal static partial class ProgramEmissionTests
         options.SetRaw("runExternalCode"u8, "true"u8);
         using var mapperOptions = JsonDocument.Parse("{\"echo\":true,\"supplemental\":true}");
         using var declared = JsonDocument.Parse("[]");
-        var mapper = new ContentMapper("fixture"u8, [".view"u8], mapperOptions.RootElement.Clone(), "/source"u8, "fixture"u8, "1"u8,
+        var mapper = new ContentMapper("fixture"u8, [".view"u8], mapperOptions.RootElement.Clone(),
+            Utf8String.FromString(Path.GetFullPath("csharp/tests/fixtures/mappers")), "fixture"u8, "1"u8,
             ["node"u8, Utf8String.FromString(Path.GetFullPath("csharp/tests/fixtures/mappers/mapper.mjs")), "utf-8"u8, "fixture"u8], declared.RootElement.Clone(), false);
         var mappedConfig = new ParsedConfig("/source/tsconfig.json"u8, options, ["/source/main.view"u8], [], [], []) { ContentMappers = [mapper] };
         fs.WriteFile("/source/main.view"u8, "export const value: number = 1;"u8);

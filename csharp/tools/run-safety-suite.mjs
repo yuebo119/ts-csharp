@@ -16,7 +16,8 @@ const option = name => {
 };
 
 // 文档记载的已知失败基线：npm-process-safety 属环境不稳定类（重试可过）。
-const baseline = new Set(["--checker-relation-context-safety", "--program-emit-safety", "--npm-process-safety"]);
+// program-emit 与 checker-relation-context 在 2026-10-22 修复后转绿，不再基线化。
+const baseline = new Set(["--npm-process-safety"]);
 
 // 仓内构建产物路径（旧外仓布局 built/csharp/build/... 已不存在）。
 const harness = option("--harness")

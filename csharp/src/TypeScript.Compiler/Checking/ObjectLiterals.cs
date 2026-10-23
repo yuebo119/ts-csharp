@@ -153,6 +153,15 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
                 }
                 else if (declaration is SpreadAssignmentNode spread)
                 {
+                    // The override check compares this spread with the properties collected before
+                    // it, so materialize the table before the ordered list is reset for the
+                    // post-spread bookkeeping below.
+                    if (all is null)
+                    {
+                        all = new();
+                        if (ordered is not null)
+                            foreach (var property in ordered) all[property.Name] = property;
+                    }
                     if (ordered is { Count: > 0 } orderedBeforeSpread)
                     {
                         spreadType = await spreads.GetAsync(
@@ -172,19 +181,14 @@ internal sealed class ObjectLiterals(TypeContext context, CheckerLinks links, Ch
                             mode & CheckMode.Inferential,
                             cancellation).ConfigureAwait(false),
                         cancellation).ConfigureAwait(false);
-                    if (await bindings.ValidSpreadAsync(type, cancellation).ConfigureAwait(false))
+                    bool validSpread = await bindings.ValidSpreadAsync(type, cancellation).ConfigureAwait(false);
+                    if (validSpread)
                     {
                         type = await spreads.MergeEmptyAsync(type, isConst, cancellation).ConfigureAwait(false);
                         if (context.StrictNullChecks)
                         {
-                            // First spread: the override check needs the properties collected so far,
-                            // so `all` is materialized from `ordered` at exactly this point.
-                            if (all is null)
-                            {
-                                all = new();
-                                foreach (var property in ordered!) all[property.Name] = property;
-                            }
-                            foreach (var right in await properties.GetAsync(type, cancellation).ConfigureAwait(false))
+                            var spreadProperties = await properties.GetAsync(type, cancellation).ConfigureAwait(false);
+                            foreach (var right in spreadProperties)
                                 if ((right.Flags & SymbolFlags.Optional) == 0 && (right.CheckFlags & CheckFlags.Partial) == 0
                                     && all.TryGetValue(right.Name, out var left))
                                     host.SpreadOverride(left.ValueDeclaration!, left, spread);
