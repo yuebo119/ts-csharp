@@ -85,7 +85,7 @@
 置信度：[事实]
 建议：测。夹具族增加一个错误密集型（`errdense` 已存在），把 5001 行诊断的 stdout 纳入常规门禁。
 
-**F-001-02 逐字节产物面 97% 由单一夹具贡献，两个夹具产物数为 0，四个已存在夹具未入门禁（部分 closed：errdense 868d230、editbig eccc446；剩余 noEmit 产物面与 inc512/errdense-clean）**
+**F-001-02 逐字节产物面 97% 由单一夹具贡献，两个夹具产物数为 0，四个已存在夹具未入门禁（closed：errdense 868d230、editbig eccc446、noEmit 文件列表与 errdense-clean 本轮；inc512 的增量职责由 editbig 覆盖）**
 
 维度：3.9　位置：`csharp/tools/perf-verify.mjs:24`
 现象：`specs` 只列 6 个夹具，产物分布为 medium 195、huge 2、dtsheavy 2、longline 2、tiny512 0、small3 0。`tiny512` 与 `small3` 的 tsconfig 是 `noEmit: true`，设计上不产生产物。夹具目录下另有 `editbig`、`errdense`、`errdense-clean`、`inc512` 四个夹具不在这份清单里。
@@ -820,7 +820,7 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 | 项 | 状态 | 证据 |
 | --- | --- | --- |
 | F-003-01 参数化旗标未枚举 | 已修（第 3 轮，055d01c） | 套件 94→96 旗标 |
-| F-001-01/F-001-02 诊断面与夹具覆盖 | **收口（诊断面与增量轮）** | errdense 的 5000 行诊断进入 stdout 哈希（868d230）；editbig 全量 + 3 轮确定性编辑、128 产物逐字节（eccc446，`INCREMENTAL-OK`）。剩余：两个 noEmit 夹具只比退出码；`inc512`/`errdense-clean` 未列入 |
+| F-001-01/F-001-02 诊断面与夹具覆盖 | **收口** | errdense 的 5000 行诊断进入 stdout 哈希（868d230）；editbig 全量 + 3 轮确定性编辑、128 产物逐字节（eccc446，`INCREMENTAL-OK`）；`tiny512`/`small3` 改跑 `--listFiles` 并把输出按 `<target>` 归一化后入哈希，errdense-clean 双胞胎入门禁（本轮，`BYTECHECK-OK`）。inc512 的增量职责由 editbig 覆盖，未单列 |
 | F-001-04 断言数无下限 | **收口** | `safety-floors.json` 记录 61 个旗标的断言下限；套件低于下限即门禁红。变异验证：`--rpc-safety` 下限 186→187 时输出 `ASSERTION FLOOR` 并 exit 1；恢复后 `SUITE-OK` |
 | F-001-03 两个永久红旗标提前中止 | **已修（eccc446）** | program-emit 18/18、relation-context 14/14 全部执行并通过；根本原因是产品漏报 TS2783（见 F-004-08）与映射器工作目录为虚拟路径 |
 
