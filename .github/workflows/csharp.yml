@@ -33,6 +33,8 @@ jobs:
         run: dotnet build csharp/TypeScript.slnx -c Release -p:UseSharedCompilation=false
       - name: Safety suite (failure set must stay within documented baseline)
         run: node csharp/tools/run-safety-suite.mjs
+      - name: Architecture gate (dependency edges and public surface budget)
+        run: node csharp/tools/architecture-check.mjs
       - name: Publish NativeAOT product
         run: dotnet publish csharp/src/TypeScript.CommandLine/TypeScript.CommandLine.csproj -c Release -r win-x64 -p:PublishAot=true -p:TypeScriptExecutableName=tsc -p:EmbedTypeScriptLibraries=false -p:UseSharedCompilation=false -o built/ci-aot
       - name: Smoke test product
