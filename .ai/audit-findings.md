@@ -947,3 +947,23 @@ UTF-16 分叉只影响 `--generateTrace` 输出的行列号（诊断/追踪元�
 ### 13. 一句话结论
 
 架构面没有行为缺陷，但门禁补全过程中发现并修复了一个真实的产品漏报（TS2783）：底层无反向依赖、公开面零泄漏、核心零环境依赖、配置面与文档一致；四条跨层环与公开面过宽（630 对 11）留作策略性债务，并已由基线冻结门禁（177 条依赖边、328 个手写 public 类型）拦住新增。门禁盲区家族四项全部收口（errdense、断言下限、editbig 增量轮、两个红旗标），套件 96/96（npm-process 环境项偶发失败，基线保留），逐字节 7 夹具 + 增量 4 轮全等。
+
+---
+
+## 战役收口（2026-10-22）
+
+用户裁决：**停止，收口**。两件存量债务不执行：四条跨层环（Checking↔LanguageServices、Checking↔Emission、Projects↔LanguageServices、Diagnostics↔Checking）保持原样，630 个导出类型中可收窄的部分保持原样。架构基线门禁已冻结存量，后续改动只会被拦新增，不会继续积累债务。
+
+最终门禁矩阵（收口轮实测）：
+
+| 项 | 结果 |
+| --- | --- |
+| 构建 | Release 0 警告 0 错误 |
+| safety | 96/96 通过，`content-mappers` 通过 |
+| 逐字节 | 8 夹具 `BYTECHECK-OK (audit-r04-gate3 == audit-closeout)` |
+| 增量 | editbig 全量 + 3 轮编辑、128 产物 `INCREMENTAL-OK (audit-r04-inc == audit-closeout-inc)` |
+| 架构 | `ARCHITECTURE-OK (177 edges, 328 hand-written public types)` |
+
+四轮共 33 条发现（F-001 11、F-002 10、F-003 3、F-004 9），状态见各轮卡片。产品侧修复：探针跨线程 NRE、无界 `stackalloc`、LSP 帧长预分配、UTF-16 列计数统一、对象展开 TS2783 漏报。测试与门禁：参数化旗标枚举、errdense 与 noEmit 文件列表、断言下限、editbig 增量门禁、架构基线门禁。
+
+未来若重开，先读本文件与 `docs/csharp-perf-method.md`，并确认新方向不在 perf-ledger 表2/表3 与本文件的已否决项内。
